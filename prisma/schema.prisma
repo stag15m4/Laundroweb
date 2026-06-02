@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  STAFF
+}
+
+enum MachineType {
+  WASHER
+  DRYER
+  OTHER
+}
+
+enum MachineStatus {
+  OPERATIONAL
+  OUT_OF_ORDER
+  NEEDS_SERVICE
+  RETIRED
+}
+
+enum UtilityType {
+  ELECTRIC
+  WATER
+  GAS
+  SEWER
+}
+
+enum RevenueSource {
+  COIN
+  CARD
+  VENDING
+  OTHER
+}
+
+enum MaintenanceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(STAFF)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notes     Note[]
+  incidents Incident[]
+}
+
+model Machine {
+  id           String        @id @default(cuid())
+  name         String
+  type         MachineType
+  brand        String?
+  model        String?
+  serialNumber String?       @unique
+  location     String?
+  installDate  DateTime?
+  status       MachineStatus @default(OPERATIONAL)
+  notes        String?
+  cycleCount   Int           @default(0)
+  warrantyExpiry DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  maintenanceLogs MaintenanceLog[]
+  revenueEntries  RevenueEntry[]
+}
+
+model MaintenanceLog {
+  id          String            @id @default(cuid())
+  machineId   String?
+  machine     Machine?          @relation(fields: [machineId], references: [id])
+  date        DateTime
+  type        String
+  description String
+  cost        Decimal?          @db.Decimal(10, 2)
+  technician  String?
+  vendor      String?
+  nextDueDate DateTime?
+  status      MaintenanceStatus @default(COMPLETED)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model RevenueEntry {
+  id          String        @id @default(cuid())
+  date        DateTime
+  amount      Decimal       @db.Decimal(10, 2)
+  source      RevenueSource @default(COIN)
+  machineId   String?
+  machine     Machine?      @relation(fields: [machineId], references: [id])
+  notes       String?
+  collectedBy String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model UtilityBill {
+  id                 String      @id @default(cuid())
+  type               UtilityType
+  billingPeriodStart DateTime
+  billingPeriodEnd   DateTime
+  dueDate            DateTime?
+  usageAmount        Decimal     @db.Decimal(10, 3)
+  usageUnit          String
+  cost               Decimal     @db.Decimal(10, 2)
+  provider           String?
+  accountNumber      String?
+  notes              String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+}
+
+model VendingProduct {
+  id           String   @id @default(cuid())
+  name         String
+  category     String
+  price        Decimal  @db.Decimal(10, 2)
+  costPerUnit  Decimal? @db.Decimal(10, 2)
+  currentStock Int      @default(0)
+  minimumStock Int      @default(5)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sales    VendingSale[]
+  restocks VendingRestock[]
+}
+
+model VendingSale {
+  id        String         @id @default(cuid())
+  productId String
+  product   VendingProduct @relation(fields: [productId], references: [id])
+  quantity  Int
+  revenue   Decimal        @db.Decimal(10, 2)
+  date      DateTime
+  createdAt DateTime       @default(now())
+}
+
+model VendingRestock {
+  id        String         @id @default(cuid())
+  productId String
+  product   VendingProduct @relation(fields: [productId], references: [id])
+  quantity  Int
+  cost      Decimal?       @db.Decimal(10, 2)
+  date      DateTime
+  supplier  String?
+  createdAt DateTime       @default(now())
+}
+
+model BuildingMaintenance {
+  id          String            @id @default(cuid())
+  date        DateTime
+  type        String
+  description String
+  cost        Decimal?          @db.Decimal(10, 2)
+  vendor      String?
+  nextDueDate DateTime?
+  status      MaintenanceStatus @default(COMPLETED)
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  date        DateTime
+  category    String
+  description String
+  amount      Decimal  @db.Decimal(10, 2)
+  vendor      String?
+  receiptUrl  String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Incident {
+  id           String   @id @default(cuid())
+  date         DateTime
+  description  String
+  actionTaken  String?
+  followUp     String?
+  resolved     Boolean  @default(false)
+  reportedById String?
+  reportedBy   User?    @relation(fields: [reportedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  company   String?
+  phone     String?
+  email     String?
+  role      String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  content   String
+  category  String   @default("general")
+  isPinned  Boolean  @default(false)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

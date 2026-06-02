@@ -19,6 +19,7 @@ import {
   LogOut,
   WashingMachine,
   ChevronRight,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ const ownerNav = [
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/cameras", label: "Cameras", icon: Camera },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 const staffNav = [
@@ -42,6 +44,7 @@ const staffNav = [
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/maintenance", label: "Maintenance", icon: Wrench },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {

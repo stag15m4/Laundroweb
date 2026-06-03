@@ -6,7 +6,6 @@ import { signOut, useSession } from "next-auth/react";
 import {
   LayoutDashboard,
   DollarSign,
-  Wrench,
   Zap,
   ShoppingBag,
   Building2,
@@ -27,9 +26,7 @@ import { cn } from "@/lib/utils";
 const ownerNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/revenue", label: "Revenue", icon: DollarSign },
-  { href: "/dashboard/equipment", label: "Equipment", icon: WashingMachine },
-  { href: "/dashboard/floor-plan", label: "Floor Plan", icon: LayoutGrid },
-  { href: "/dashboard/maintenance", label: "Maintenance", icon: Wrench },
+  { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid },
   { href: "/dashboard/utilities", label: "Utilities", icon: Zap },
   { href: "/dashboard/vending", label: "Vending", icon: ShoppingBag },
   { href: "/dashboard/expenses", label: "Expenses", icon: Receipt },
@@ -43,9 +40,9 @@ const ownerNav = [
 
 const staffNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
-  { href: "/dashboard/maintenance", label: "Maintenance", icon: Wrench },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

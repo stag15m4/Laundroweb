@@ -3,11 +3,19 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const machineId = new URL(req.url).searchParams.get("machineId");
+  const where = machineId === "building"
+    ? { machineId: null }
+    : machineId
+    ? { machineId }
+    : undefined;
+
   const logs = await prisma.maintenanceLog.findMany({
+    where,
     orderBy: { date: "desc" },
     include: { machine: { select: { id: true, name: true, type: true } } },
   });

@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Settings,
   LayoutGrid,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const ownerNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/revenue", label: "Revenue", icon: DollarSign },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid },
+  { href: "/dashboard/parts", label: "Parts", icon: Package },
   { href: "/dashboard/utilities", label: "Utilities", icon: Zap },
   { href: "/dashboard/vending", label: "Vending", icon: ShoppingBag },
   { href: "/dashboard/expenses", label: "Expenses", icon: Receipt },
@@ -41,6 +43,7 @@ const ownerNav = [
 const staffNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid },
+  { href: "/dashboard/parts", label: "Parts", icon: Package },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },

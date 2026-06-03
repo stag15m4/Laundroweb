@@ -97,6 +97,33 @@ model MaintenanceLog {
   status      MaintenanceStatus @default(COMPLETED)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+
+  partsUsed MaintenancePartUsage[]
+}
+
+model PartInventory {
+  id           String   @id @default(cuid())
+  name         String
+  category     String   @default("general")
+  unit         String   @default("ea")
+  quantity     Int      @default(0)
+  minimumStock Int      @default(1)
+  costPerUnit  Decimal? @db.Decimal(10, 2)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  usages MaintenancePartUsage[]
+}
+
+model MaintenancePartUsage {
+  id               String         @id @default(cuid())
+  maintenanceLogId String
+  maintenanceLog   MaintenanceLog @relation(fields: [maintenanceLogId], references: [id], onDelete: Cascade)
+  partId           String
+  part             PartInventory  @relation(fields: [partId], references: [id])
+  quantityUsed     Int
+  createdAt        DateTime       @default(now())
 }
 
 model RevenueEntry {

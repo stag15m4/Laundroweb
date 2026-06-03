@@ -60,6 +60,23 @@ type Machine = {
   _count: { maintenanceLogs: number };
 };
 
+type PartInventory = {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  quantity: number;
+  minimumStock: number;
+  costPerUnit: string | null;
+};
+
+type PartUsed = {
+  id: string;
+  partId: string;
+  quantityUsed: number;
+  part: { id: string; name: string; unit: string; costPerUnit: string | null };
+};
+
 type MaintenanceLog = {
   id: string;
   machineId: string | null;
@@ -71,6 +88,7 @@ type MaintenanceLog = {
   vendor: string | null;
   nextDueDate: string | null;
   status: string;
+  partsUsed?: PartUsed[];
 };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -296,13 +314,17 @@ function MachineDetailModal({
   open,
   onClose,
   onMachineUpdated,
+  onPartsChanged,
   isOwner,
+  parts,
 }: {
   machine: Machine | null | undefined;
   open: boolean;
   onClose: () => void;
   onMachineUpdated: (m: Machine) => void;
+  onPartsChanged: (partId: string, delta: number) => void;
   isOwner: boolean;
+  parts: PartInventory[];
 }) {
   const [mode, setMode] = useState<"maintenance" | "setup">("maintenance");
   const [logs, setLogs] = useState<MaintenanceLog[]>([]);
@@ -310,6 +332,9 @@ function MachineDetailModal({
   const [showForm, setShowForm] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [logForm, setLogForm] = useState(emptyLogForm());
+  const [partsUsed, setPartsUsed] = useState<{ partId: string; quantityUsed: number }[]>([]);
+  const [addPartId, setAddPartId] = useState("");
+  const [addPartQty, setAddPartQty] = useState("1");
   const [setupForm, setSetupForm] = useState(emptyMachineForm);
   const [saving, setSaving] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
@@ -322,6 +347,9 @@ function MachineDetailModal({
     setShowForm(false);
     setShowMore(false);
     setCollapsed(true);
+    setPartsUsed([]);
+    setAddPartId("");
+    setAddPartQty("1");
     if (!machineKey) return;
     setLogsLoading(true);
     fetch(`/api/maintenance?machineId=${machineKey}`)
@@ -372,12 +400,20 @@ function MachineDetailModal({
         vendor: logForm.vendor || null,
         nextDueDate: logForm.nextDueDate || null,
         status: "COMPLETED",
+        parts: partsUsed,
       }),
     });
     if (res.ok) {
       const log = await res.json();
       setLogs((prev) => [log, ...prev]);
+      // Update local parts inventory counts
+      for (const { partId, quantityUsed } of partsUsed) {
+        onPartsChanged(partId, -quantityUsed);
+      }
       setLogForm(emptyLogForm());
+      setPartsUsed([]);
+      setAddPartId("");
+      setAddPartQty("1");
       setShowForm(false);
       setShowMore(false);
     }
@@ -509,49 +545,148 @@ function MachineDetailModal({
                       onClick={() => setShowMore(true)}
                       className="text-xs text-blue-600 hover:underline"
                     >
-                      + More details (cost, technician, vendor, next due)
+                      + More details (cost, parts, technician, vendor, next due)
                     </button>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label>Cost ($)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={logForm.cost}
-                          onChange={(e) => setLogForm((f) => ({ ...f, cost: e.target.value }))}
-                          placeholder="0.00"
-                        />
+                  ) : (() => {
+                    const partsCost = partsUsed.reduce((sum, { partId, quantityUsed }) => {
+                      const p = parts.find((x) => x.id === partId);
+                      return sum + (p?.costPerUnit ? Number(p.costPerUnit) * quantityUsed : 0);
+                    }, 0);
+                    const availableParts = parts.filter(
+                      (p) => !partsUsed.some((u) => u.partId === p.id)
+                    );
+                    return (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label>Cost ($)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={logForm.cost}
+                              onChange={(e) => setLogForm((f) => ({ ...f, cost: e.target.value }))}
+                              placeholder="0.00"
+                            />
+                            {partsCost > 0 && !logForm.cost && (
+                              <button
+                                type="button"
+                                onClick={() => setLogForm((f) => ({ ...f, cost: partsCost.toFixed(2) }))}
+                                className="text-xs text-blue-600 hover:underline"
+                              >
+                                Use parts cost ({formatCurrency(partsCost)})
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Next Due Date</Label>
+                            <Input
+                              type="date"
+                              value={logForm.nextDueDate}
+                              onChange={(e) =>
+                                setLogForm((f) => ({ ...f, nextDueDate: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Technician</Label>
+                            <Input
+                              value={logForm.technician}
+                              onChange={(e) =>
+                                setLogForm((f) => ({ ...f, technician: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Vendor / Company</Label>
+                            <Input
+                              value={logForm.vendor}
+                              onChange={(e) =>
+                                setLogForm((f) => ({ ...f, vendor: e.target.value }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {/* Parts used */}
+                        {parts.length > 0 && (
+                          <div className="space-y-2">
+                            <Label>Parts Used</Label>
+                            {partsUsed.map(({ partId, quantityUsed }) => {
+                              const p = parts.find((x) => x.id === partId);
+                              if (!p) return null;
+                              return (
+                                <div key={partId} className="flex items-center gap-2 text-sm">
+                                  <span className="flex-1">
+                                    {p.name} × {quantityUsed} {p.unit}
+                                    {p.costPerUnit && (
+                                      <span className="text-gray-400 ml-1.5">
+                                        ({formatCurrency(Number(p.costPerUnit) * quantityUsed)})
+                                      </span>
+                                    )}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPartsUsed((prev) =>
+                                        prev.filter((u) => u.partId !== partId)
+                                      )
+                                    }
+                                    className="text-gray-400 hover:text-red-500"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {availableParts.length > 0 && (
+                              <div className="flex items-center gap-2">
+                                <Select
+                                  value={addPartId}
+                                  onValueChange={setAddPartId}
+                                >
+                                  <SelectTrigger className="flex-1 h-8 text-xs">
+                                    <SelectValue placeholder="Select part…" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {availableParts.map((p) => (
+                                      <SelectItem key={p.id} value={p.id} className="text-xs">
+                                        {p.name} ({p.quantity} {p.unit} on hand)
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={addPartQty}
+                                  onChange={(e) => setAddPartQty(e.target.value)}
+                                  className="w-16 h-8 text-xs"
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-2"
+                                  disabled={!addPartId}
+                                  onClick={() => {
+                                    if (!addPartId) return;
+                                    setPartsUsed((prev) => [
+                                      ...prev,
+                                      { partId: addPartId, quantityUsed: Math.max(1, Number(addPartQty)) },
+                                    ]);
+                                    setAddPartId("");
+                                    setAddPartQty("1");
+                                  }}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="space-y-1.5">
-                        <Label>Next Due Date</Label>
-                        <Input
-                          type="date"
-                          value={logForm.nextDueDate}
-                          onChange={(e) =>
-                            setLogForm((f) => ({ ...f, nextDueDate: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Technician</Label>
-                        <Input
-                          value={logForm.technician}
-                          onChange={(e) =>
-                            setLogForm((f) => ({ ...f, technician: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Vendor / Company</Label>
-                        <Input
-                          value={logForm.vendor}
-                          onChange={(e) => setLogForm((f) => ({ ...f, vendor: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                   <div className="flex items-center gap-2">
                     <Button type="submit" size="sm">
                       Save Log
@@ -564,6 +699,9 @@ function MachineDetailModal({
                         setShowForm(false);
                         setShowMore(false);
                         setLogForm(emptyLogForm());
+                        setPartsUsed([]);
+                        setAddPartId("");
+                        setAddPartQty("1");
                       }}
                     >
                       Cancel
@@ -595,6 +733,27 @@ function MachineDetailModal({
                           )}
                         </div>
                         <p className="text-sm text-gray-700">{log.description}</p>
+                        {log.partsUsed && log.partsUsed.length > 0 && (
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Parts:{" "}
+                            {log.partsUsed.map((u, i) => (
+                              <span key={u.id}>
+                                {i > 0 && ", "}
+                                {u.part.name} ×{u.quantityUsed}
+                              </span>
+                            ))}
+                            {(() => {
+                              const total = log.partsUsed.reduce(
+                                (s, u) =>
+                                  s + (u.part.costPerUnit ? Number(u.part.costPerUnit) * u.quantityUsed : 0),
+                                0
+                              );
+                              return total > 0 ? (
+                                <span className="text-gray-400 ml-1">({formatCurrency(total)})</span>
+                              ) : null;
+                            })()}
+                          </p>
+                        )}
                         {(log.technician || log.vendor) && (
                           <p className="text-xs text-gray-400 mt-0.5">
                             {[log.technician, log.vendor].filter(Boolean).join(" · ")}
@@ -790,6 +949,7 @@ export default function EquipmentPage() {
   const isOwner = (session?.user as { role?: string })?.role === "OWNER";
 
   const [machines, setMachines] = useState<Machine[]>([]);
+  const [parts, setParts] = useState<PartInventory[]>([]);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null | undefined>(undefined);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState(emptyMachineForm);
@@ -798,7 +958,16 @@ export default function EquipmentPage() {
     fetch("/api/equipment")
       .then((r) => r.json())
       .then(setMachines);
+    fetch("/api/parts")
+      .then((r) => r.json())
+      .then(setParts);
   }, []);
+
+  function handlePartsChanged(partId: string, delta: number) {
+    setParts((prev) =>
+      prev.map((p) => (p.id === partId ? { ...p, quantity: p.quantity + delta } : p))
+    );
+  }
 
   // ── Floor plan helpers ───────────────────────────────────────────────────────
 
@@ -1309,7 +1478,9 @@ export default function EquipmentPage() {
         open={selectedMachine !== undefined}
         onClose={() => setSelectedMachine(undefined)}
         onMachineUpdated={handleMachineUpdated}
+        onPartsChanged={handlePartsChanged}
         isOwner={isOwner}
+        parts={parts}
       />
     </div>
   );

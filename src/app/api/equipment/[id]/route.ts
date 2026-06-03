@@ -23,6 +23,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       warrantyExpiry: body.warrantyExpiry ? new Date(body.warrantyExpiry) : null,
       status: body.status,
       notes: body.notes || null,
+      keyCode: body.keyCode !== undefined ? (body.keyCode || null) : undefined,
       cycleCount: body.cycleCount ?? undefined,
     },
   });

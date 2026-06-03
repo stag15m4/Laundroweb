@@ -20,6 +20,7 @@ import {
   WashingMachine,
   ChevronRight,
   Settings,
+  LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const ownerNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/revenue", label: "Revenue", icon: DollarSign },
   { href: "/dashboard/equipment", label: "Equipment", icon: WashingMachine },
+  { href: "/dashboard/floor-plan", label: "Floor Plan", icon: LayoutGrid },
   { href: "/dashboard/maintenance", label: "Maintenance", icon: Wrench },
   { href: "/dashboard/utilities", label: "Utilities", icon: Zap },
   { href: "/dashboard/vending", label: "Vending", icon: ShoppingBag },

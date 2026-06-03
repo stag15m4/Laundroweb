@@ -15,6 +15,7 @@ enum Role {
 enum MachineType {
   WASHER
   DRYER
+  VENDING
   OTHER
 }
 
@@ -72,6 +73,9 @@ model Machine {
   notes        String?
   cycleCount   Int           @default(0)
   warrantyExpiry DateTime?
+  keyCode      String?
+  floorZone    String?
+  floorOrder   Int?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 

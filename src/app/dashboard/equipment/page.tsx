@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { Plus, Pencil, WashingMachine, Wind, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, WashingMachine, Wind, AlertTriangle, ShoppingCart, Wrench, Eye, EyeOff } from "lucide-react";
 
 type Machine = {
   id: string;
@@ -25,6 +25,7 @@ type Machine = {
   status: string;
   notes: string | null;
   cycleCount: number;
+  keyCode: string | null;
   _count: { maintenanceLogs: number };
 };
 
@@ -35,10 +36,39 @@ const statusColors: Record<string, "success" | "destructive" | "warning" | "seco
   RETIRED: "secondary",
 };
 
+const typeIcon: Record<string, React.ElementType> = {
+  WASHER: WashingMachine,
+  DRYER: Wind,
+  VENDING: ShoppingCart,
+  OTHER: Wrench,
+};
+
+const typeColor: Record<string, string> = {
+  WASHER: "text-blue-500",
+  DRYER: "text-orange-500",
+  VENDING: "text-purple-500",
+  OTHER: "text-gray-400",
+};
+
 const emptyForm = {
   name: "", type: "WASHER", brand: "", model: "", serialNumber: "",
-  location: "", installDate: "", warrantyExpiry: "", status: "OPERATIONAL", notes: "",
+  location: "", installDate: "", warrantyExpiry: "", status: "OPERATIONAL",
+  notes: "", keyCode: "",
 };
+
+function KeyCodeField({ value }: { value: string | null }) {
+  const [visible, setVisible] = useState(false);
+  if (!value) return null;
+  return (
+    <div className="flex items-center gap-1 text-xs text-gray-500">
+      <span className="font-medium">Key Code:</span>
+      <span className="font-mono">{visible ? value : "••••••"}</span>
+      <button onClick={() => setVisible((v) => !v)} className="text-gray-400 hover:text-gray-600">
+        {visible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+      </button>
+    </div>
+  );
+}
 
 export default function EquipmentPage() {
   const [machines, setMachines] = useState<Machine[]>([]);
@@ -69,18 +99,18 @@ export default function EquipmentPage() {
       warrantyExpiry: m.warrantyExpiry ? m.warrantyExpiry.slice(0, 10) : "",
       status: m.status,
       notes: m.notes ?? "",
+      keyCode: m.keyCode ?? "",
     });
     setOpen(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const payload = { ...form };
     if (editTarget) {
       const res = await fetch(`/api/equipment/${editTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(form),
       });
       if (res.ok) {
         const updated = await res.json();
@@ -90,7 +120,7 @@ export default function EquipmentPage() {
       const res = await fetch("/api/equipment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(form),
       });
       if (res.ok) {
         const created = await res.json();
@@ -100,21 +130,29 @@ export default function EquipmentPage() {
     setOpen(false);
   }
 
-  const washers = machines.filter((m) => m.type === "WASHER" && m.status !== "RETIRED");
-  const dryers = machines.filter((m) => m.type === "DRYER" && m.status !== "RETIRED");
-  const other = machines.filter((m) => m.type === "OTHER" && m.status !== "RETIRED");
+  const grouped: Record<string, Machine[]> = {
+    WASHER: machines.filter((m) => m.type === "WASHER" && m.status !== "RETIRED"),
+    DRYER: machines.filter((m) => m.type === "DRYER" && m.status !== "RETIRED"),
+    VENDING: machines.filter((m) => m.type === "VENDING" && m.status !== "RETIRED"),
+    OTHER: machines.filter((m) => m.type === "OTHER" && m.status !== "RETIRED"),
+  };
+
+  const typeLabels: Record<string, string> = {
+    WASHER: "Washers",
+    DRYER: "Dryers",
+    VENDING: "Vending Machines",
+    OTHER: "Other Equipment",
+  };
 
   function MachineCard({ m }: { m: Machine }) {
+    const Icon = typeIcon[m.type] ?? Wrench;
+    const iconColor = typeColor[m.type] ?? "text-gray-400";
     return (
-      <Card key={m.id} className={m.status === "OUT_OF_ORDER" ? "border-red-200" : m.status === "NEEDS_SERVICE" ? "border-yellow-200" : ""}>
+      <Card className={m.status === "OUT_OF_ORDER" ? "border-red-200" : m.status === "NEEDS_SERVICE" ? "border-yellow-200" : ""}>
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2">
-              {m.type === "WASHER" ? (
-                <WashingMachine className="h-5 w-5 text-blue-500" />
-              ) : (
-                <Wind className="h-5 w-5 text-orange-500" />
-              )}
+              <Icon className={`h-5 w-5 ${iconColor}`} />
               <div>
                 <p className="font-semibold text-sm">{m.name}</p>
                 {m.brand && <p className="text-xs text-gray-400">{m.brand} {m.model}</p>}
@@ -139,6 +177,7 @@ export default function EquipmentPage() {
             )}
             <p>Maintenance logs: {m._count.maintenanceLogs}</p>
             {m.cycleCount > 0 && <p>Cycles: {m.cycleCount.toLocaleString()}</p>}
+            <KeyCodeField value={m.keyCode} />
           </div>
           {m.notes && <p className="mt-2 text-xs text-gray-400 italic">{m.notes}</p>}
         </CardContent>
@@ -168,8 +207,8 @@ export default function EquipmentPage() {
             <DialogTitle>{editTarget ? "Edit Machine" : "Add Machine"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
-            <FormField label="Name" id="name">
-              <Input id="name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required />
+            <FormField label="Unit" id="name">
+              <Input id="name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Washer 1" required />
             </FormField>
             <FormField label="Type">
               <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v }))}>
@@ -177,6 +216,7 @@ export default function EquipmentPage() {
                 <SelectContent>
                   <SelectItem value="WASHER">Washer</SelectItem>
                   <SelectItem value="DRYER">Dryer</SelectItem>
+                  <SelectItem value="VENDING">Vending Machine</SelectItem>
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
@@ -190,14 +230,11 @@ export default function EquipmentPage() {
             <FormField label="Serial Number">
               <Input value={form.serialNumber} onChange={(e) => setForm((f) => ({ ...f, serialNumber: e.target.value }))} placeholder="e.g. W-001" />
             </FormField>
+            <FormField label="Key Code">
+              <Input value={form.keyCode} onChange={(e) => setForm((f) => ({ ...f, keyCode: e.target.value }))} placeholder="Coin box or panel access code" />
+            </FormField>
             <FormField label="Location">
               <Input value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} placeholder="e.g. Row A, Position 1" />
-            </FormField>
-            <FormField label="Install Date">
-              <Input type="date" value={form.installDate} onChange={(e) => setForm((f) => ({ ...f, installDate: e.target.value }))} />
-            </FormField>
-            <FormField label="Warranty Expiry">
-              <Input type="date" value={form.warrantyExpiry} onChange={(e) => setForm((f) => ({ ...f, warrantyExpiry: e.target.value }))} />
             </FormField>
             <FormField label="Status">
               <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}>
@@ -209,6 +246,12 @@ export default function EquipmentPage() {
                   <SelectItem value="RETIRED">Retired</SelectItem>
                 </SelectContent>
               </Select>
+            </FormField>
+            <FormField label="Install Date">
+              <Input type="date" value={form.installDate} onChange={(e) => setForm((f) => ({ ...f, installDate: e.target.value }))} />
+            </FormField>
+            <FormField label="Warranty Expiry">
+              <Input type="date" value={form.warrantyExpiry} onChange={(e) => setForm((f) => ({ ...f, warrantyExpiry: e.target.value }))} />
             </FormField>
             <FormField label="Notes">
               <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
@@ -228,31 +271,15 @@ export default function EquipmentPage() {
           </div>
         )}
 
-        {washers.length > 0 && (
-          <div>
-            <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide mb-3">Washers</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {washers.map((m) => <MachineCard key={m.id} m={m} />)}
+        {Object.entries(grouped).map(([type, list]) =>
+          list.length > 0 ? (
+            <div key={type}>
+              <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide mb-3">{typeLabels[type]}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {list.map((m) => <MachineCard key={m.id} m={m} />)}
+              </div>
             </div>
-          </div>
-        )}
-
-        {dryers.length > 0 && (
-          <div>
-            <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide mb-3">Dryers</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {dryers.map((m) => <MachineCard key={m.id} m={m} />)}
-            </div>
-          </div>
-        )}
-
-        {other.length > 0 && (
-          <div>
-            <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide mb-3">Other Equipment</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {other.map((m) => <MachineCard key={m.id} m={m} />)}
-            </div>
-          </div>
+          ) : null
         )}
 
         {machines.filter((m) => m.status !== "RETIRED").length === 0 && (

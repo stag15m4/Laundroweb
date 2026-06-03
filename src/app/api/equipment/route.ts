@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
       warrantyExpiry: body.warrantyExpiry ? new Date(body.warrantyExpiry) : null,
       status: body.status ?? "OPERATIONAL",
       notes: body.notes || null,
+      keyCode: body.keyCode || null,
     },
   });
   return NextResponse.json(machine, { status: 201 });

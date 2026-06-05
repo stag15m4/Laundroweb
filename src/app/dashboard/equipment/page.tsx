@@ -37,6 +37,9 @@ import {
   Settings,
   MapPin,
   AlertTriangle,
+  BookOpen,
+  Upload,
+  Trash2,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -58,6 +61,16 @@ type Machine = {
   floorZone: string | null;
   floorOrder: number | null;
   _count: { maintenanceLogs: number };
+};
+
+type ManualDoc = {
+  id: string;
+  name: string;
+  machineType: string | null;
+  machineId: string | null;
+  fileName: string;
+  fileSize: number;
+  updatedAt: string;
 };
 
 type PartInventory = {
@@ -315,16 +328,20 @@ function MachineDetailModal({
   onClose,
   onMachineUpdated,
   onPartsChanged,
+  onManualsChanged,
   isOwner,
   parts,
+  manuals,
 }: {
   machine: Machine | null | undefined;
   open: boolean;
   onClose: () => void;
   onMachineUpdated: (m: Machine) => void;
   onPartsChanged: (partId: string, delta: number) => void;
+  onManualsChanged: (manual: ManualDoc | null, deletedId?: string) => void;
   isOwner: boolean;
   parts: PartInventory[];
+  manuals: ManualDoc[];
 }) {
   const [mode, setMode] = useState<"maintenance" | "setup">("maintenance");
   const [logs, setLogs] = useState<MaintenanceLog[]>([]);
@@ -338,6 +355,8 @@ function MachineDetailModal({
   const [setupForm, setSetupForm] = useState(emptyMachineForm);
   const [saving, setSaving] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [uploadingManual, setUploadingManual] = useState(false);
 
   const machineKey = machine === null ? "building" : machine?.id;
 
@@ -455,7 +474,47 @@ function MachineDetailModal({
 
   const visibleLogs = collapsed ? logs.slice(0, 5) : logs;
 
+  // Manual for this machine: machine-specific first, then type-level
+  const isBuilding2 = machine === null;
+  const manual = isBuilding2
+    ? manuals.find((m) => m.machineType === "BUILDING")
+    : machine
+    ? (manuals.find((m) => m.machineId === machine.id) ??
+       manuals.find((m) => m.machineType === machine.type))
+    : undefined;
+
+  async function uploadManual(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !machine && !isBuilding2) return;
+    setUploadingManual(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("name", file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "));
+    if (isBuilding2) {
+      fd.append("machineType", "BUILDING");
+    } else if (machine!.type === "OTHER") {
+      // machine-specific for OTHER types
+      fd.append("machineId", machine!.id);
+    } else {
+      fd.append("machineType", machine!.type);
+    }
+    const res = await fetch("/api/manuals", { method: "POST", body: fd });
+    if (res.ok) {
+      const created = await res.json();
+      onManualsChanged(created);
+    }
+    setUploadingManual(false);
+    e.target.value = "";
+  }
+
+  async function deleteManual() {
+    if (!manual) return;
+    const res = await fetch(`/api/manuals/${manual.id}`, { method: "DELETE" });
+    if (res.ok) onManualsChanged(null, manual.id);
+  }
+
   return (
+    <>
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
@@ -490,13 +549,24 @@ function MachineDetailModal({
         <div className="overflow-y-auto flex-1 space-y-4 pr-1 pt-1">
           {mode === "maintenance" ? (
             <>
+              {/* Action row: Log Service + Manual */}
+              {!showForm && (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={() => setShowForm(true)}>
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Log Service
+                  </Button>
+                  {manual && (
+                    <Button size="sm" variant="outline" onClick={() => setViewerOpen(true)}>
+                      <BookOpen className="h-3.5 w-3.5 mr-1.5" />
+                      {manual.name}
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* Quick log form */}
-              {!showForm ? (
-                <Button size="sm" onClick={() => setShowForm(true)}>
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Log Service
-                </Button>
-              ) : (
+              {showForm && (
                 <form
                   onSubmit={submitLog}
                   className="border rounded-lg p-4 bg-gray-50 space-y-3"
@@ -936,9 +1006,97 @@ function MachineDetailModal({
               </form>
             )
           )}
+
+          {/* Manual section — visible in both modes */}
+          {mode === "setup" && isOwner && (machine || isBuilding2) && (
+            <div className="border-t pt-4 space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Maintenance Manual
+              </p>
+              {manual ? (
+                <div className="flex items-center gap-3 p-3 border rounded-lg bg-gray-50">
+                  <BookOpen className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{manual.name}</p>
+                    <p className="text-xs text-gray-400">
+                      {manual.fileName} · {(manual.fileSize / 1024 / 1024).toFixed(1)} MB
+                      {machine?.type !== "OTHER" && (
+                        <span className="ml-1 text-blue-600">
+                          (applies to all {machine?.type?.toLowerCase() ?? "building"}s)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setViewerOpen(true)}
+                    >
+                      <BookOpen className="h-3.5 w-3.5" />
+                    </Button>
+                    <label
+                      className="cursor-pointer inline-flex items-center justify-center rounded-md p-1.5 text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+                      title="Replace manual"
+                    >
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        className="hidden"
+                        onChange={uploadManual}
+                        disabled={uploadingManual}
+                      />
+                      <Upload className="h-3.5 w-3.5" />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={deleteManual}
+                      className="text-gray-400 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <label className="cursor-pointer flex items-center gap-2 p-3 border-2 border-dashed border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    onChange={uploadManual}
+                    disabled={uploadingManual}
+                  />
+                  <Upload className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm text-gray-500">
+                    {uploadingManual ? "Uploading…" : "Upload PDF manual"}
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* PDF viewer dialog */}
+    <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+      <DialogContent className="max-w-5xl max-h-[95vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-4 pb-2 flex-shrink-0">
+          <DialogTitle>{manual?.name ?? "Manual"}</DialogTitle>
+        </DialogHeader>
+        {manual && (
+          <iframe
+            src={`/api/manuals/${manual.id}/file`}
+            className="flex-1 w-full min-h-[80vh] border-0"
+            title={manual.name}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
@@ -950,23 +1108,34 @@ export default function EquipmentPage() {
 
   const [machines, setMachines] = useState<Machine[]>([]);
   const [parts, setParts] = useState<PartInventory[]>([]);
+  const [manuals, setManuals] = useState<ManualDoc[]>([]);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null | undefined>(undefined);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState(emptyMachineForm);
 
   useEffect(() => {
-    fetch("/api/equipment")
-      .then((r) => r.json())
-      .then(setMachines);
-    fetch("/api/parts")
-      .then((r) => r.json())
-      .then(setParts);
+    fetch("/api/equipment").then((r) => r.json()).then(setMachines);
+    fetch("/api/parts").then((r) => r.json()).then(setParts);
+    fetch("/api/manuals").then((r) => r.json()).then(setManuals);
   }, []);
 
   function handlePartsChanged(partId: string, delta: number) {
     setParts((prev) =>
       prev.map((p) => (p.id === partId ? { ...p, quantity: p.quantity + delta } : p))
     );
+  }
+
+  function handleManualsChanged(manual: ManualDoc | null, deletedId?: string) {
+    if (deletedId) {
+      setManuals((prev) => prev.filter((m) => m.id !== deletedId));
+    } else if (manual) {
+      setManuals((prev) => {
+        const exists = prev.find((m) => m.id === manual.id);
+        return exists
+          ? prev.map((m) => (m.id === manual.id ? manual : m))
+          : [...prev, manual];
+      });
+    }
   }
 
   // ── Floor plan helpers ───────────────────────────────────────────────────────
@@ -1479,8 +1648,10 @@ export default function EquipmentPage() {
         onClose={() => setSelectedMachine(undefined)}
         onMachineUpdated={handleMachineUpdated}
         onPartsChanged={handlePartsChanged}
+        onManualsChanged={handleManualsChanged}
         isOwner={isOwner}
         parts={parts}
+        manuals={manuals}
       />
     </div>
   );

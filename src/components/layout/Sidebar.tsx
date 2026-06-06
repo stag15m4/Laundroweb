@@ -49,15 +49,15 @@ const staffNav = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role;
   const nav = role === "OWNER" ? ownerNav : staffNav;
 
   return (
-    <aside className="flex h-screen w-60 flex-col border-r border-gray-200 bg-gray-950 text-white">
-      <div className="flex h-16 items-center gap-2 px-5 border-b border-gray-800">
+    <aside className="flex h-full w-60 flex-col border-r border-gray-200 bg-gray-950 text-white">
+      <div className="flex h-16 items-center gap-2 px-5 border-b border-gray-800 flex-shrink-0">
         <WashingMachine className="h-6 w-6 text-blue-400" />
         <span className="font-bold text-lg tracking-tight">Laundroweb</span>
       </div>
@@ -69,6 +69,7 @@ export function Sidebar() {
             <Link
               key={href}
               href={href}
+              onClick={() => onClose?.()}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 active

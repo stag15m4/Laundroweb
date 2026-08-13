@@ -28,6 +28,7 @@ import {
   ShoppingCart,
   Wrench,
   Thermometer,
+  AirVent,
   Building2,
   Eye,
   EyeOff,
@@ -133,6 +134,7 @@ const typeIcon: Record<string, React.ElementType> = {
   DRYER: Wind,
   VENDING: ShoppingCart,
   WATER_HEATER: Thermometer,
+  AIR_CONDITIONER: AirVent,
   OTHER: Wrench,
 };
 
@@ -141,6 +143,7 @@ const typeColor: Record<string, string> = {
   DRYER: "text-orange-500",
   VENDING: "text-purple-500",
   WATER_HEATER: "text-red-400",
+  AIR_CONDITIONER: "text-cyan-500",
   OTHER: "text-gray-400",
 };
 
@@ -149,6 +152,7 @@ const typeLabel: Record<string, string> = {
   DRYER: "Dryer",
   VENDING: "Vending Machine",
   WATER_HEATER: "Water Heater",
+  AIR_CONDITIONER: "Air Conditioner",
   OTHER: "Other",
 };
 
@@ -921,6 +925,7 @@ function MachineDetailModal({
                       <SelectItem value="DRYER">Dryer</SelectItem>
                       <SelectItem value="VENDING">Vending Machine</SelectItem>
                       <SelectItem value="WATER_HEATER">Water Heater</SelectItem>
+                      <SelectItem value="AIR_CONDITIONER">Air Conditioner</SelectItem>
                       <SelectItem value="OTHER">Other</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1415,6 +1420,8 @@ export default function EquipmentPage() {
                     <SelectItem value="WASHER">Washer</SelectItem>
                     <SelectItem value="DRYER">Dryer</SelectItem>
                     <SelectItem value="VENDING">Vending Machine</SelectItem>
+                    <SelectItem value="WATER_HEATER">Water Heater</SelectItem>
+                    <SelectItem value="AIR_CONDITIONER">Air Conditioner</SelectItem>
                     <SelectItem value="OTHER">Other</SelectItem>
                   </SelectContent>
                 </Select>

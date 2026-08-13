@@ -17,6 +17,7 @@ enum MachineType {
   DRYER
   VENDING
   WATER_HEATER
+  AIR_CONDITIONER
   OTHER
 }
 

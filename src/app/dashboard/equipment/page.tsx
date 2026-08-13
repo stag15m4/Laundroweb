@@ -43,6 +43,7 @@ import {
   BookOpen,
   Upload,
   Trash2,
+  Copy,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -343,6 +344,7 @@ function MachineDetailModal({
   open,
   onClose,
   onMachineUpdated,
+  onMachineCloned,
   onPartsChanged,
   onManualsChanged,
   isOwner,
@@ -353,6 +355,7 @@ function MachineDetailModal({
   open: boolean;
   onClose: () => void;
   onMachineUpdated: (m: Machine) => void;
+  onMachineCloned: (m: Machine) => void;
   onPartsChanged: (partId: string, delta: number) => void;
   onManualsChanged: (manual: ManualDoc | null, deletedId?: string) => void;
   isOwner: boolean;
@@ -370,6 +373,7 @@ function MachineDetailModal({
   const [addPartQty, setAddPartQty] = useState("1");
   const [setupForm, setSetupForm] = useState(emptyMachineForm);
   const [saving, setSaving] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [uploadingManual, setUploadingManual] = useState(false);
@@ -486,6 +490,33 @@ function MachineDetailModal({
       onMachineUpdated({ ...machine, ...updated, _count: machine._count });
     }
     setSaving(false);
+  }
+
+  async function cloneMachine() {
+    if (!machine) return;
+    setCloning(true);
+    const res = await fetch("/api/equipment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: `${machine.name} (Copy)`,
+        type: machine.type,
+        brand: machine.brand ?? "",
+        model: machine.model ?? "",
+        serialNumber: "",   // unique per physical unit — fill in after cloning
+        location: machine.location ?? "",
+        installDate: "",
+        warrantyExpiry: "",
+        status: "OPERATIONAL",
+        notes: machine.notes ?? "",
+        keyCode: machine.keyCode ?? "",
+      }),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      onMachineCloned({ ...created, _count: { maintenanceLogs: 0 } });
+    }
+    setCloning(false);
   }
 
   const visibleLogs = collapsed ? logs.slice(0, 5) : logs;
@@ -1016,9 +1047,19 @@ function MachineDetailModal({
                     onChange={(e) => setSetupForm((f) => ({ ...f, notes: e.target.value }))}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-2 flex gap-2 flex-wrap">
                   <Button type="submit" disabled={saving}>
                     {saving ? "Saving…" : "Save Changes"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={cloning}
+                    onClick={cloneMachine}
+                    title="Duplicate this machine (copies type, brand, model — clears serial # and dates)"
+                  >
+                    <Copy className="h-3.5 w-3.5 mr-1.5" />
+                    {cloning ? "Duplicating…" : "Duplicate Machine"}
                   </Button>
                 </div>
               </form>
@@ -1226,6 +1267,11 @@ export default function EquipmentPage() {
   function handleMachineUpdated(updated: Machine) {
     setMachines((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
     setSelectedMachine(updated);
+  }
+
+  function handleMachineCloned(cloned: Machine) {
+    setMachines((prev) => [...prev, cloned]);
+    setSelectedMachine(cloned); // switch the open modal to the new clone
   }
 
   // ── Add machine ──────────────────────────────────────────────────────────────
@@ -1744,6 +1790,7 @@ export default function EquipmentPage() {
         open={selectedMachine !== undefined}
         onClose={() => setSelectedMachine(undefined)}
         onMachineUpdated={handleMachineUpdated}
+        onMachineCloned={handleMachineCloned}
         onPartsChanged={handlePartsChanged}
         onManualsChanged={handleManualsChanged}
         isOwner={isOwner}

@@ -116,6 +116,7 @@ const ZONES = [
   { code: "F", label: "Front" },
   { code: "B", label: "Back" },
   { code: "OUT", label: "Outside" },
+  { code: "MAINT", label: "Maintenance Room" },
 ];
 
 const LOG_TYPES = [
@@ -1344,6 +1345,7 @@ export default function EquipmentPage() {
   const frontList = byZone("F");
   const backList = byZone("B");
   const outsideList = byZone("OUT");
+  const maintList = byZone("MAINT");
   const unplacedMachines = machines.filter((m) => !m.floorZone && m.status !== "RETIRED");
   const outOfOrderCount = machines.filter((m) => m.status === "OUT_OF_ORDER").length;
 
@@ -1682,6 +1684,36 @@ export default function EquipmentPage() {
           ) : (
             <p className="text-center text-xs text-green-300">
               No equipment assigned to Outside zone
+            </p>
+          )}
+        </div>
+
+        {/* Maintenance Room zone */}
+        <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 bg-slate-50">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 text-center">
+            🔧 Maintenance Room
+          </p>
+          {maintList.length > 0 ? (
+            <div className="flex flex-wrap gap-2 justify-center">
+              {maintList.map((m, i) => (
+                <div key={m.id} className="w-40">
+                  <FloorMachineCard
+                    machine={m}
+                    onSelect={() => setSelectedMachine(m)}
+                    isFirst={i === 0}
+                    isLast={i === maintList.length - 1}
+                    onMoveUp={() => moveWithin(m, "up")}
+                    onMoveDown={() => moveWithin(m, "down")}
+                    onZoneChange={(z) => assign(m, z)}
+                    onUnplace={() => unplace(m)}
+                    isOwner={isOwner}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-xs text-slate-300">
+              No equipment assigned to Maintenance Room
             </p>
           )}
         </div>

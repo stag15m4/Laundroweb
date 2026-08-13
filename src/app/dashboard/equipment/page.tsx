@@ -27,6 +27,7 @@ import {
   Wind,
   ShoppingCart,
   Wrench,
+  Thermometer,
   Building2,
   Eye,
   EyeOff,
@@ -34,6 +35,7 @@ import {
   ChevronDown,
   X,
   Plus,
+  FileDown,
   Settings,
   MapPin,
   AlertTriangle,
@@ -130,6 +132,7 @@ const typeIcon: Record<string, React.ElementType> = {
   WASHER: WashingMachine,
   DRYER: Wind,
   VENDING: ShoppingCart,
+  WATER_HEATER: Thermometer,
   OTHER: Wrench,
 };
 
@@ -137,7 +140,16 @@ const typeColor: Record<string, string> = {
   WASHER: "text-blue-500",
   DRYER: "text-orange-500",
   VENDING: "text-purple-500",
+  WATER_HEATER: "text-red-400",
   OTHER: "text-gray-400",
+};
+
+const typeLabel: Record<string, string> = {
+  WASHER: "Washer",
+  DRYER: "Dryer",
+  VENDING: "Vending Machine",
+  WATER_HEATER: "Water Heater",
+  OTHER: "Other",
 };
 
 const statusBorder: Record<string, string> = {
@@ -908,6 +920,7 @@ function MachineDetailModal({
                       <SelectItem value="WASHER">Washer</SelectItem>
                       <SelectItem value="DRYER">Dryer</SelectItem>
                       <SelectItem value="VENDING">Vending Machine</SelectItem>
+                      <SelectItem value="WATER_HEATER">Water Heater</SelectItem>
                       <SelectItem value="OTHER">Other</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1283,9 +1296,86 @@ export default function EquipmentPage() {
   const unplacedMachines = machines.filter((m) => !m.floorZone && m.status !== "RETIRED");
   const outOfOrderCount = machines.filter((m) => m.status === "OUT_OF_ORDER").length;
 
+  async function handleExportPDF() {
+    const { jsPDF } = await import("jspdf");
+    const autoTable = (await import("jspdf-autotable")).default;
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
+
+    const generated = new Date().toLocaleDateString("en-US", {
+      year: "numeric", month: "long", day: "numeric",
+    });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("Equipment Inventory Report", 14, 18);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Generated: ${generated}`, 14, 26);
+    doc.text(`${machines.filter(m => m.status !== "RETIRED").length} active machines`, 14, 32);
+    doc.setTextColor(0);
+
+    const statusLabel: Record<string, string> = {
+      OPERATIONAL: "Operational",
+      OUT_OF_ORDER: "Out of Order",
+      NEEDS_SERVICE: "Needs Service",
+      RETIRED: "Retired",
+    };
+
+    const sorted = [...machines].sort((a, b) =>
+      (typeLabel[a.type] ?? a.type).localeCompare(typeLabel[b.type] ?? b.type) ||
+      a.name.localeCompare(b.name)
+    );
+
+    const rows = sorted.map((m) => [
+      m.name,
+      typeLabel[m.type] ?? m.type,
+      m.brand ?? "—",
+      m.model ?? "—",
+      m.serialNumber ?? "—",
+      statusLabel[m.status] ?? m.status,
+      [m.floorZone, m.location].filter(Boolean).join(" · ") || "—",
+      m.installDate ? new Date(m.installDate).toLocaleDateString("en-US") : "—",
+      m.warrantyExpiry ? new Date(m.warrantyExpiry).toLocaleDateString("en-US") : "—",
+      m.cycleCount > 0 ? m.cycleCount.toLocaleString() : "—",
+      m.keyCode ?? "—",
+      m.notes ? (m.notes.length > 50 ? m.notes.slice(0, 47) + "…" : m.notes) : "—",
+    ]);
+
+    autoTable(doc, {
+      head: [["Unit", "Type", "Brand", "Model", "Serial #", "Status", "Location", "Installed", "Warranty", "Cycles", "Key", "Notes"]],
+      body: rows,
+      startY: 38,
+      styles: { fontSize: 7.5, cellPadding: 2.5, overflow: "linebreak" },
+      headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold", fontSize: 7.5 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { fontStyle: "bold", minCellWidth: 22 },
+        4: { font: "courier", fontSize: 6.5, minCellWidth: 28 },
+        11: { minCellWidth: 35, cellWidth: "wrap" },
+      },
+    });
+
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      const w = doc.internal.pageSize.getWidth();
+      const h = doc.internal.pageSize.getHeight();
+      doc.text(`Page ${i} of ${pageCount}`, w - 14, h - 8, { align: "right" });
+    }
+
+    doc.save(`equipment-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   return (
     <div>
       <Header title="Equipment" description="Floor plan, maintenance logs, and machine details">
+        <Button variant="outline" onClick={handleExportPDF} disabled={machines.length === 0}>
+          <FileDown className="h-4 w-4 mr-2" />
+          Export PDF
+        </Button>
         {isOwner && (
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />

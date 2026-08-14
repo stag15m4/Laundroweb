@@ -346,6 +346,7 @@ function MachineDetailModal({
   onClose,
   onMachineUpdated,
   onMachineCloned,
+  onMachineDeleted,
   onPartsChanged,
   onManualsChanged,
   isOwner,
@@ -357,6 +358,7 @@ function MachineDetailModal({
   onClose: () => void;
   onMachineUpdated: (m: Machine) => void;
   onMachineCloned: (m: Machine) => void;
+  onMachineDeleted: (id: string) => void;
   onPartsChanged: (partId: string, delta: number) => void;
   onManualsChanged: (manual: ManualDoc | null, deletedId?: string) => void;
   isOwner: boolean;
@@ -375,6 +377,8 @@ function MachineDetailModal({
   const [setupForm, setSetupForm] = useState(emptyMachineForm);
   const [saving, setSaving] = useState(false);
   const [cloning, setCloning] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [uploadingManual, setUploadingManual] = useState(false);
@@ -387,6 +391,7 @@ function MachineDetailModal({
     setShowForm(false);
     setShowMore(false);
     setCollapsed(true);
+    setConfirmDelete(false);
     setPartsUsed([]);
     setAddPartId("");
     setAddPartQty("1");
@@ -518,6 +523,16 @@ function MachineDetailModal({
       onMachineCloned({ ...created, _count: { maintenanceLogs: 0 } });
     }
     setCloning(false);
+  }
+
+  async function deleteMachine() {
+    if (!machine) return;
+    setDeleting(true);
+    const res = await fetch(`/api/equipment/${machine.id}`, { method: "DELETE" });
+    if (res.ok) {
+      onMachineDeleted(machine.id);
+    }
+    setDeleting(false);
   }
 
   const visibleLogs = collapsed ? logs.slice(0, 5) : logs;
@@ -1048,7 +1063,7 @@ function MachineDetailModal({
                     onChange={(e) => setSetupForm((f) => ({ ...f, notes: e.target.value }))}
                   />
                 </div>
-                <div className="col-span-2 flex gap-2 flex-wrap">
+                <div className="col-span-2 flex gap-2 flex-wrap items-center">
                   <Button type="submit" disabled={saving}>
                     {saving ? "Saving…" : "Save Changes"}
                   </Button>
@@ -1062,6 +1077,41 @@ function MachineDetailModal({
                     <Copy className="h-3.5 w-3.5 mr-1.5" />
                     {cloning ? "Duplicating…" : "Duplicate Machine"}
                   </Button>
+                  <div className="ml-auto">
+                    {confirmDelete ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-red-600 font-medium">Delete this machine?</span>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          disabled={deleting}
+                          onClick={deleteMachine}
+                        >
+                          {deleting ? "Deleting…" : "Yes, Delete"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConfirmDelete(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => setConfirmDelete(true)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                        Delete
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </form>
             )
@@ -1273,6 +1323,11 @@ export default function EquipmentPage() {
   function handleMachineCloned(cloned: Machine) {
     setMachines((prev) => [...prev, cloned]);
     setSelectedMachine(cloned); // switch the open modal to the new clone
+  }
+
+  function handleMachineDeleted(id: string) {
+    setMachines((prev) => prev.filter((m) => m.id !== id));
+    setSelectedMachine(undefined); // close the modal
   }
 
   // ── Add machine ──────────────────────────────────────────────────────────────
@@ -1823,6 +1878,7 @@ export default function EquipmentPage() {
         onClose={() => setSelectedMachine(undefined)}
         onMachineUpdated={handleMachineUpdated}
         onMachineCloned={handleMachineCloned}
+        onMachineDeleted={handleMachineDeleted}
         onPartsChanged={handlePartsChanged}
         onManualsChanged={handleManualsChanged}
         isOwner={isOwner}

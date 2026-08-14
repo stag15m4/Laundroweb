@@ -36,6 +36,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
-  await prisma.machine.update({ where: { id }, data: { status: "RETIRED" } });
+  await prisma.$transaction(async (tx) => {
+    // Detach related records before hard-deleting the machine
+    await tx.maintenanceLog.updateMany({ where: { machineId: id }, data: { machineId: null } });
+    await tx.revenueEntry.updateMany({ where: { machineId: id }, data: { machineId: null } });
+    await tx.manualDocument.deleteMany({ where: { machineId: id } });
+    await tx.machine.delete({ where: { id } });
+  });
   return NextResponse.json({ ok: true });
 }

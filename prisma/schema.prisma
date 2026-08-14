@@ -84,6 +84,7 @@ model Machine {
   maintenanceLogs MaintenanceLog[]
   revenueEntries  RevenueEntry[]
   manual          ManualDocument?
+  vendingSlots    VendingSlot[]
 }
 
 model MaintenanceLog {
@@ -172,6 +173,21 @@ model VendingProduct {
 
   sales    VendingSale[]
   restocks VendingRestock[]
+  slots    VendingSlot[]
+}
+
+model VendingSlot {
+  id        String         @id @default(cuid())
+  machineId String
+  machine   Machine        @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  slotCode  String         // e.g. "A1", "B3"
+  productId String?
+  product   VendingProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  capacity  Int            @default(10)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([machineId, slotCode])
 }
 
 model VendingSale {

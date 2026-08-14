@@ -1317,12 +1317,12 @@ export default function EquipmentPage() {
 
   function handleMachineUpdated(updated: Machine) {
     setMachines((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-    setSelectedMachine(updated);
+    setSelectedMachine(undefined);
   }
 
   function handleMachineCloned(cloned: Machine) {
     setMachines((prev) => [...prev, cloned]);
-    setSelectedMachine(cloned); // switch the open modal to the new clone
+    setSelectedMachine(undefined);
   }
 
   function handleMachineDeleted(id: string) {

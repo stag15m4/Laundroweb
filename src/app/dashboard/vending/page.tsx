@@ -85,6 +85,7 @@ function PlanogramGrid({
   const [slots, setSlots] = useState<Slot[]>([]);
   const [rows, setRows] = useState(5);
   const [cols, setCols] = useState(8);
+  const [gridLoaded, setGridLoaded] = useState(false);
   const [editSlot, setEditSlot] = useState<{ code: string; slot?: Slot } | null>(null);
   const [editForm, setEditForm] = useState({ productId: "", capacity: "10" });
   const [saving, setSaving] = useState(false);
@@ -97,7 +98,36 @@ function PlanogramGrid({
       });
   }, [machineId]);
 
+  // Load persisted grid dimensions for this machine
+  useEffect(() => {
+    setGridLoaded(false);
+    fetch(`/api/settings?prefix=planogram_${machineId}_`)
+      .then((r) => r.json())
+      .then((settings: { key: string; value: string }[]) => {
+        if (Array.isArray(settings)) {
+          const r = settings.find((s) => s.key === `planogram_${machineId}_rows`);
+          const c = settings.find((s) => s.key === `planogram_${machineId}_cols`);
+          if (r) setRows(Number(r.value));
+          if (c) setCols(Number(c.value));
+        }
+        setGridLoaded(true);
+      });
+  }, [machineId]);
+
   useEffect(() => { fetchSlots(); }, [fetchSlots]);
+
+  function saveGridSize(newRows: number, newCols: number) {
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: `planogram_${machineId}_rows`, value: newRows }),
+    });
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: `planogram_${machineId}_cols`, value: newCols }),
+    });
+  }
 
   const slotMap = new Map(slots.map((s) => [s.slotCode, s]));
 
@@ -149,6 +179,8 @@ function PlanogramGrid({
 
   const rowLetters = rowLabels(rows);
 
+  if (!gridLoaded) return <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>;
+
   return (
     <div className="space-y-4">
       {/* Grid size controls */}
@@ -156,14 +188,14 @@ function PlanogramGrid({
         <div className="flex items-center gap-2">
           <span className="font-medium">Rows</span>
           <button
-            onClick={() => setRows((r) => Math.max(1, r - 1))}
+            onClick={() => { const v = Math.max(1, rows - 1); setRows(v); saveGridSize(v, cols); }}
             className="p-0.5 rounded hover:bg-gray-100"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <span className="w-5 text-center font-mono">{rows}</span>
           <button
-            onClick={() => setRows((r) => Math.min(10, r + 1))}
+            onClick={() => { const v = Math.min(10, rows + 1); setRows(v); saveGridSize(v, cols); }}
             className="p-0.5 rounded hover:bg-gray-100"
           >
             <ChevronRight className="h-4 w-4" />
@@ -172,14 +204,14 @@ function PlanogramGrid({
         <div className="flex items-center gap-2">
           <span className="font-medium">Columns</span>
           <button
-            onClick={() => setCols((c) => Math.max(1, c - 1))}
+            onClick={() => { const v = Math.max(1, cols - 1); setCols(v); saveGridSize(rows, v); }}
             className="p-0.5 rounded hover:bg-gray-100"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <span className="w-5 text-center font-mono">{cols}</span>
           <button
-            onClick={() => setCols((c) => Math.min(12, c + 1))}
+            onClick={() => { const v = Math.min(12, cols + 1); setCols(v); saveGridSize(rows, v); }}
             className="p-0.5 rounded hover:bg-gray-100"
           >
             <ChevronRight className="h-4 w-4" />

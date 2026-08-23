@@ -3,33 +3,39 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+// GET /api/settings?key=foo         → { key, value } or null
+// GET /api/settings?prefix=foo_     → [{ key, value }, ...]
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const settings = await prisma.setting.findMany();
-  const map: Record<string, string> = {};
-  for (const s of settings) map[s.key] = s.value;
-  return NextResponse.json(map);
+  const key = req.nextUrl.searchParams.get("key");
+  const prefix = req.nextUrl.searchParams.get("prefix");
+
+  if (key) {
+    const setting = await prisma.setting.findUnique({ where: { key } });
+    return NextResponse.json(setting);
+  }
+  if (prefix) {
+    const settings = await prisma.setting.findMany({ where: { key: { startsWith: prefix } } });
+    return NextResponse.json(settings);
+  }
+  return NextResponse.json({ error: "key or prefix required" }, { status: 400 });
 }
 
+// POST /api/settings  { key, value }  → upsert
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as { role?: string }).role !== "OWNER") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { key, value } = await req.json();
+  if (!key || value === undefined) {
+    return NextResponse.json({ error: "key and value required" }, { status: 400 });
   }
-
-  const body = await req.json();
-  const results: Record<string, string> = {};
-
-  for (const [key, value] of Object.entries(body)) {
-    const setting = await prisma.setting.upsert({
-      where: { key },
-      update: { value: String(value) },
-      create: { key, value: String(value) },
-    });
-    results[setting.key] = setting.value;
-  }
-
-  return NextResponse.json(results);
+  const setting = await prisma.setting.upsert({
+    where: { key },
+    update: { value: String(value) },
+    create: { key, value: String(value) },
+  });
+  return NextResponse.json(setting);
 }

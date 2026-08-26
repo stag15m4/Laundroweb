@@ -21,6 +21,7 @@ import {
   Settings,
   LayoutGrid,
   Package,
+  Thermometer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ const ownerNav = [
   { href: "/dashboard/parts", label: "Parts", icon: Package },
   { href: "/dashboard/utilities", label: "Utilities", icon: Zap },
   { href: "/dashboard/vending", label: "Vending", icon: ShoppingBag },
+  { href: "/dashboard/climate", label: "Climate", icon: Thermometer },
   { href: "/dashboard/expenses", label: "Expenses", icon: Receipt },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/contacts", label: "Contacts", icon: Users },
@@ -46,6 +48,7 @@ const staffNav = [
   { href: "/dashboard/parts", label: "Parts", icon: Package },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
+  { href: "/dashboard/climate", label: "Climate", icon: Thermometer },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

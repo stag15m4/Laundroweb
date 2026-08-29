@@ -555,10 +555,11 @@ function MachineDetailModal({
     fd.append("name", file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "));
     if (isBuilding2) {
       fd.append("machineType", "BUILDING");
-    } else if (machine!.type === "OTHER") {
-      // machine-specific for OTHER types
+    } else if (["OTHER", "VENDING", "WATER_HEATER", "AIR_CONDITIONER"].includes(machine!.type)) {
+      // machine-specific — these types can have unique manuals per unit
       fd.append("machineId", machine!.id);
     } else {
+      // WASHER / DRYER — one manual covers all units of that type
       fd.append("machineType", machine!.type);
     }
     const res = await fetch("/api/manuals", { method: "POST", body: fd });
@@ -1130,11 +1131,11 @@ function MachineDetailModal({
                     <p className="text-sm font-medium truncate">{manual.name}</p>
                     <p className="text-xs text-gray-400">
                       {manual.fileName} · {(manual.fileSize / 1024 / 1024).toFixed(1)} MB
-                      {machine?.type !== "OTHER" && (
+                      {machine?.type === "WASHER" || machine?.type === "DRYER" ? (
                         <span className="ml-1 text-blue-600">
-                          (applies to all {machine?.type?.toLowerCase() ?? "building"}s)
+                          (applies to all {machine.type.toLowerCase()}s)
                         </span>
-                      )}
+                      ) : null}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, CheckCircle2, Clock, AlertTriangle, Wrench, X } from "lucide-react";
+import { Plus, CheckCircle2, Clock, AlertTriangle, Wrench, X, Copy } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -87,11 +87,13 @@ function ScheduleCard({
   isOwner,
   onComplete,
   onDelete,
+  onCopy,
 }: {
   schedule: Schedule;
   isOwner: boolean;
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
+  onCopy: (s: Schedule) => void;
 }) {
   const [completing, setCompleting] = useState(false);
   const days = daysUntil(schedule.nextDueAt);
@@ -164,6 +166,13 @@ function ScheduleCard({
             {completing ? "Saving…" : "Done"}
           </Button>
           <button
+            onClick={() => onCopy(schedule)}
+            className="p-1.5 text-gray-300 hover:text-blue-400 transition-colors"
+            title="Copy task"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+          <button
             onClick={() => onDelete(schedule.id)}
             className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
             title="Remove task"
@@ -185,6 +194,7 @@ export default function MaintenancePage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [machines, setMachines] = useState<MachineSummary[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+  const [dialogTitle, setDialogTitle] = useState("Add Maintenance Task");
   const [form, setForm] = useState(emptyForm);
 
   useEffect(() => {
@@ -219,6 +229,7 @@ export default function MaintenancePage() {
       ));
       setAddOpen(false);
       setForm(emptyForm);
+      setDialogTitle("Add Maintenance Task");
     }
   }
 
@@ -237,6 +248,21 @@ export default function MaintenancePage() {
     }
   }
 
+  function handleCopy(s: Schedule) {
+    const scope = s.machineId ? "machine" : s.machineType ? "type" : "building";
+    setForm({
+      title: s.title,
+      description: s.description ?? "",
+      scope,
+      machineId: s.machineId ?? "",
+      machineType: s.machineType ?? "WASHER",
+      frequencyDays: String(s.frequencyDays),
+      notes: s.notes ?? "",
+    });
+    setDialogTitle("Copy Task");
+    setAddOpen(true);
+  }
+
   async function handleDelete(id: string) {
     const res = await fetch(`/api/maintenance/schedule/${id}`, { method: "DELETE" });
     if (res.ok) setSchedules((prev) => prev.filter((s) => s.id !== id));
@@ -252,7 +278,7 @@ export default function MaintenancePage() {
       <div className="space-y-2">
         <h3 className={`text-xs font-bold uppercase tracking-widest ${accent ?? "text-gray-500"}`}>{title}</h3>
         {items.map((s) => (
-          <ScheduleCard key={s.id} schedule={s} isOwner={isOwner} onComplete={handleComplete} onDelete={handleDelete} />
+          <ScheduleCard key={s.id} schedule={s} isOwner={isOwner} onComplete={handleComplete} onDelete={handleDelete} onCopy={handleCopy} />
         ))}
       </div>
     );
@@ -262,7 +288,7 @@ export default function MaintenancePage() {
     <div>
       <Header title="Maintenance Schedule" description="Recurring preventive maintenance tasks">
         {isOwner && (
-          <Button onClick={() => setAddOpen(true)}>
+          <Button onClick={() => { setForm(emptyForm); setDialogTitle("Add Maintenance Task"); setAddOpen(true); }}>
             <Plus className="h-4 w-4 mr-2" />
             Add Task
           </Button>
@@ -288,9 +314,9 @@ export default function MaintenancePage() {
       </div>
 
       {/* Add task dialog */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) setForm(emptyForm); }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Add Maintenance Task</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{dialogTitle}</DialogTitle></DialogHeader>
           <form onSubmit={handleAdd} className="space-y-4">
             <div className="space-y-1.5">
               <Label>Task</Label>

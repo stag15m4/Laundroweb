@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/Header";
+import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,6 +76,13 @@ export default function ExpensesPage() {
           Add Expense
         </Button>
       </Header>
+
+      <PageTabs tabs={[
+        { label: "Revenue", href: "/dashboard/revenue" },
+        { label: "Expenses", href: "/dashboard/expenses" },
+        { label: "Utilities", href: "/dashboard/utilities" },
+        { label: "Reports", href: "/dashboard/reports" },
+      ]} />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

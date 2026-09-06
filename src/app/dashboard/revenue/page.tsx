@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/Header";
+import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,6 +142,13 @@ export default function RevenuePage() {
           </DialogContent>
         </Dialog>
       </Header>
+
+      <PageTabs tabs={[
+        { label: "Revenue", href: "/dashboard/revenue" },
+        { label: "Expenses", href: "/dashboard/expenses" },
+        { label: "Utilities", href: "/dashboard/utilities" },
+        { label: "Reports", href: "/dashboard/reports" },
+      ]} />
 
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-3 gap-4">

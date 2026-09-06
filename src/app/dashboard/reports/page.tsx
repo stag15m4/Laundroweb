@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/Header";
+import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
@@ -86,6 +87,13 @@ export default function ReportsPage() {
           </SelectContent>
         </Select>
       </Header>
+
+      <PageTabs tabs={[
+        { label: "Revenue", href: "/dashboard/revenue" },
+        { label: "Expenses", href: "/dashboard/expenses" },
+        { label: "Utilities", href: "/dashboard/utilities" },
+        { label: "Reports", href: "/dashboard/reports" },
+      ]} />
 
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

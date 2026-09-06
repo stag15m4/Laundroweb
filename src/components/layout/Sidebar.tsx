@@ -6,52 +6,49 @@ import { signOut, useSession } from "next-auth/react";
 import {
   LayoutDashboard,
   DollarSign,
-  Zap,
   ShoppingBag,
-  Building2,
   AlertTriangle,
   BookOpen,
   Users,
   Camera,
-  BarChart3,
-  Receipt,
   LogOut,
   WashingMachine,
   ChevronRight,
   Settings,
   LayoutGrid,
-  Package,
   Thermometer,
-  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const ownerNav = [
+const EQUIPMENT_PATHS = ["/dashboard/equipment", "/dashboard/parts", "/dashboard/maintenance"];
+const FINANCE_PATHS = ["/dashboard/revenue", "/dashboard/expenses", "/dashboard/utilities", "/dashboard/reports"];
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  activePaths?: string[];
+};
+
+const ownerNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/revenue", label: "Revenue", icon: DollarSign },
-  { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid },
-  { href: "/dashboard/parts", label: "Parts", icon: Package },
-  { href: "/dashboard/utilities", label: "Utilities", icon: Zap },
+  { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
+  { href: "/dashboard/revenue", label: "Finance", icon: DollarSign, activePaths: FINANCE_PATHS },
   { href: "/dashboard/vending", label: "Vending", icon: ShoppingBag },
   { href: "/dashboard/climate", label: "Climate", icon: Thermometer },
-  { href: "/dashboard/maintenance", label: "Maintenance", icon: Wrench },
-  { href: "/dashboard/expenses", label: "Expenses", icon: Receipt },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/contacts", label: "Contacts", icon: Users },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/cameras", label: "Cameras", icon: Camera },
-  { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
-const staffNav = [
+const staffNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid },
-  { href: "/dashboard/parts", label: "Parts", icon: Package },
+  { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/climate", label: "Climate", icon: Thermometer },
-  { href: "/dashboard/maintenance", label: "Maintenance", icon: Wrench },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
@@ -69,8 +66,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-        {nav.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+        {nav.map(({ href, label, icon: Icon, activePaths }) => {
+          const paths = activePaths ?? [href];
+          const active = paths.some((p) =>
+            p === "/dashboard" ? pathname === p : pathname === p || pathname.startsWith(p + "/")
+          );
           return (
             <Link
               key={href}

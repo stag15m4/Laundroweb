@@ -81,10 +81,28 @@ model Machine {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  maintenanceLogs MaintenanceLog[]
-  revenueEntries  RevenueEntry[]
-  manual          ManualDocument?
-  vendingSlots    VendingSlot[]
+  maintenanceLogs      MaintenanceLog[]
+  maintenanceSchedules MaintenanceSchedule[]
+  revenueEntries       RevenueEntry[]
+  manual               ManualDocument?
+  vendingSlots         VendingSlot[]
+}
+
+model MaintenanceSchedule {
+  id              String    @id @default(cuid())
+  title           String
+  description     String?
+  machineId       String?
+  machine         Machine?  @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  machineType     String?   // "WASHER" | "DRYER" | etc. — applies to all of that type
+  isBuilding      Boolean   @default(false)
+  frequencyDays   Int       // 7=weekly 30=monthly 90=quarterly 180=semi-annual 365=annual
+  lastCompletedAt DateTime?
+  nextDueAt       DateTime?
+  notes           String?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 model MaintenanceLog {

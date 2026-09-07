@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const EQUIPMENT_PATHS = ["/dashboard/equipment", "/dashboard/parts", "/dashboard/maintenance"];
+const EQUIPMENT_PATHS = ["/dashboard/equipment", "/dashboard/parts", "/dashboard/maintenance", "/dashboard/pricing"];
 const FINANCE_PATHS = ["/dashboard/revenue", "/dashboard/expenses", "/dashboard/utilities", "/dashboard/reports"];
 
 type NavItem = {

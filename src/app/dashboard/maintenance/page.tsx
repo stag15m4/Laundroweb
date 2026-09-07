@@ -299,6 +299,7 @@ export default function MaintenancePage() {
         { label: "Machines", href: "/dashboard/equipment" },
         { label: "Parts", href: "/dashboard/parts" },
         { label: "Maintenance", href: "/dashboard/maintenance" },
+        { label: "Pricing", href: "/dashboard/pricing" },
       ]} />
 
       <div className="p-6 space-y-8 max-w-3xl">

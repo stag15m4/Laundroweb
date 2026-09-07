@@ -190,6 +190,7 @@ export default function PartsPage() {
         { label: "Machines", href: "/dashboard/equipment" },
         { label: "Parts", href: "/dashboard/parts" },
         { label: "Maintenance", href: "/dashboard/maintenance" },
+        { label: "Pricing", href: "/dashboard/pricing" },
       ]} />
 
       {/* Add / Edit dialog */}

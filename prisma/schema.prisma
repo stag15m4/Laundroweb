@@ -88,6 +88,27 @@ model Machine {
   vendingSlots         VendingSlot[]
 }
 
+model MachineModelPricing {
+  id          String   @id @default(cuid())
+  machineType String   // "WASHER" | "DRYER"
+  modelNumber String   // matches Machine.model
+  // Washer codes
+  ats1        String?  // Hot
+  ats2        String?  // Warm
+  ats3        String?  // Cold
+  ats4        String?  // Blankets Cold
+  ats5        String?  // Delicate Warm
+  ats6        String?  // Delicate Cold
+  cnp1        String?  // Extra Wash
+  cnp2        String?  // Extra Rinse
+  // Dryer codes
+  atsh        String?  // Price
+  cyc         String?  // Cycle Time
+  updatedAt   DateTime @updatedAt
+
+  @@unique([machineType, modelNumber])
+}
+
 model MaintenanceSchedule {
   id              String    @id @default(cuid())
   title           String

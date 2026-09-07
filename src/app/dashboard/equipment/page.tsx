@@ -1498,6 +1498,7 @@ export default function EquipmentPage() {
         { label: "Machines", href: "/dashboard/equipment" },
         { label: "Parts", href: "/dashboard/parts" },
         { label: "Maintenance", href: "/dashboard/maintenance" },
+        { label: "Pricing", href: "/dashboard/pricing" },
       ]} />
 
       {/* Add machine dialog */}

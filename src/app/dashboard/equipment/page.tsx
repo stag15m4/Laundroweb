@@ -583,32 +583,34 @@ function MachineDetailModal({
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
-          <DialogTitle asChild>
-            <div className="flex items-center gap-3 flex-wrap">
-              <Icon className={`h-5 w-5 flex-shrink-0 ${iconColor}`} />
-              <span className="font-bold text-base">{title}</span>
-              {!isBuilding && machine && (
-                <>
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
-                  <Badge variant={statusColors[machine.status]}>
-                    {machine.status.replace(/_/g, " ")}
-                  </Badge>
-                </>
-              )}
-              {!isBuilding && machine && isOwner && (
-                <Button
-                  type="button"
-                  variant={mode === "setup" ? "default" : "ghost"}
-                  size="icon"
-                  className="ml-auto h-7 w-7"
-                  onClick={() => setMode((m) => (m === "setup" ? "maintenance" : "setup"))}
-                  title="Machine setup"
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          </DialogTitle>
+          <div className="flex items-center gap-2 pr-8">
+            <DialogTitle asChild>
+              <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+                <Icon className={`h-5 w-5 flex-shrink-0 ${iconColor}`} />
+                <span className="font-bold text-base">{title}</span>
+                {!isBuilding && machine && (
+                  <>
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                    <Badge variant={statusColors[machine.status]}>
+                      {machine.status.replace(/_/g, " ")}
+                    </Badge>
+                  </>
+                )}
+              </div>
+            </DialogTitle>
+            {!isBuilding && machine && isOwner && (
+              <Button
+                type="button"
+                variant={mode === "setup" ? "default" : "ghost"}
+                size="icon"
+                className="h-7 w-7 flex-shrink-0"
+                onClick={() => setMode((m) => (m === "setup" ? "maintenance" : "setup"))}
+                title="Machine setup"
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </DialogHeader>
 
         <div className="overflow-y-auto flex-1 space-y-4 pr-1 pt-1">

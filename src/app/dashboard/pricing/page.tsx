@@ -83,44 +83,41 @@ function buildPdfHtml(groups: ModelGroup[]): string {
   for (const group of groups) {
     const codes = group.type === "WASHER" ? WASHER_CODES : DRYER_CODES;
     const p = group.pricing;
+    const typeLabel = group.type === "WASHER" ? "Washer" : "Dryer";
 
     for (const machine of group.machines) {
       const rows = codes.map(({ code, label }) => {
-        const key = code.toLowerCase().replace("cnp", "cnp");
-        const rawVal = p ? (p as Record<string, string | null>)[key.replace(/([A-Z])/g, (m) => m.toLowerCase())] : null;
-        // Look up value by lowercased key
         const dbKey = code.toLowerCase();
         const val = p ? (p as Record<string, string | null>)[dbKey] : null;
         const display = val ? (code === "CYC" ? `${val} min` : `$${val}`) : "—";
         return `<tr>
-          <td style="width:18px;text-align:center;">☐</td>
-          <td style="font-weight:600;white-space:nowrap;">${code}</td>
+          <td class="cb">☐</td>
+          <td class="code">${code}</td>
           <td>${label}</td>
-          <td style="text-align:right;font-weight:700;">${display}</td>
+          <td class="val">${display}</td>
         </tr>`;
       });
 
-      const typeLabel = group.type === "WASHER" ? "Washer" : "Dryer";
-      allCards.push(`
-        <div class="card">
-          <div class="card-head">
-            <span class="machine-name">${machine.name}</span>
-            <span class="machine-type">${typeLabel}</span>
-          </div>
-          <div class="model-num">${group.modelNumber}</div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width:18px;"></th>
-                <th>Code</th>
-                <th>Mode</th>
-                <th style="text-align:right;">Value</th>
-              </tr>
-            </thead>
-            <tbody>${rows.join("")}</tbody>
-          </table>
-        </div>`);
+      allCards.push(`<div class="card">
+        <div class="card-head">
+          <span class="machine-name">${machine.name}</span>
+          <span class="machine-type">${typeLabel}</span>
+        </div>
+        <div class="model-num">${group.modelNumber}</div>
+        <table>
+          <thead><tr><th class="cb"></th><th>Code</th><th>Mode / Setting</th><th class="val">Value</th></tr></thead>
+          <tbody>${rows.join("")}</tbody>
+        </table>
+      </div>`);
     }
+  }
+
+  // Group into explicit pages of 4 cards — reliable break control
+  const pageHtml = [];
+  for (let i = 0; i < allCards.length; i += 4) {
+    const batch = allCards.slice(i, i + 4);
+    const isLast = i + 4 >= allCards.length;
+    pageHtml.push(`<div class="page${isLast ? " last" : ""}">${batch.join("")}</div>`);
   }
 
   return `<!DOCTYPE html>
@@ -129,32 +126,49 @@ function buildPdfHtml(groups: ModelGroup[]): string {
 <meta charset="utf-8">
 <title>Machine Pricing</title>
 <style>
-  @page { size: letter; margin: 0.4in; }
+  @page { size: letter portrait; margin: 0.5in; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: monospace; font-size: 9pt; background: #fff; }
-  .print-btn { margin-bottom: 12px; padding: 6px 14px; cursor: pointer; font-size: 11pt; }
+  body { font-family: monospace; background: #fff; }
+  .print-btn { margin: 10px; padding: 6px 16px; cursor: pointer; font-size: 11pt; }
   @media print { .print-btn { display: none; } }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25in; }
+
+  /* Each page div fills one sheet exactly */
+  .page {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 0.25in;
+    width: 7.5in;
+    height: 10in;
+    break-after: page;
+    page-break-after: always;
+  }
+  .page.last { break-after: auto; page-break-after: auto; }
+
   .card {
     border: 1.5px solid #333;
-    border-radius: 4px;
+    border-radius: 3px;
     padding: 8px 10px;
-    page-break-inside: avoid;
-    break-inside: avoid;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
-  .card-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #888; padding-bottom: 4px; margin-bottom: 3px; }
-  .machine-name { font-size: 12pt; font-weight: 700; }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #888; padding-bottom: 3px; margin-bottom: 3px; }
+  .machine-name { font-size: 13pt; font-weight: 700; }
   .machine-type { font-size: 8pt; color: #555; }
   .model-num { font-size: 7pt; color: #777; margin-bottom: 6px; }
   table { width: 100%; border-collapse: collapse; }
   th { text-align: left; font-size: 7.5pt; border-bottom: 1px solid #bbb; padding: 2px 3px; font-weight: 600; color: #444; }
-  td { padding: 2.5px 3px; font-size: 8.5pt; vertical-align: middle; }
-  tbody tr:nth-child(even) { background: #f5f5f5; }
+  td { padding: 3px 3px; font-size: 9pt; vertical-align: middle; }
+  td.cb, th.cb { width: 18px; text-align: center; }
+  td.code { font-weight: 600; white-space: nowrap; }
+  td.val { text-align: right; font-weight: 700; }
+  tbody tr:nth-child(even) { background: #f2f2f2; }
 </style>
 </head>
 <body>
 <button class="print-btn" onclick="window.print()">🖨 Print</button>
-<div class="grid">${allCards.join("")}</div>
+${pageHtml.join("\n")}
 </body>
 </html>`;
 }

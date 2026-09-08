@@ -299,14 +299,14 @@ function PlanogramGrid({
             <div className="space-y-1.5">
               <Label>Product</Label>
               <Select
-                value={editForm.productId}
-                onValueChange={(v) => setEditForm((f) => ({ ...f, productId: v }))}
+                value={editForm.productId || "__none__"}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, productId: v === "__none__" ? "" : v }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="— Empty slot —" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">— Empty slot —</SelectItem>
+                  <SelectItem value="__none__">— Empty slot —</SelectItem>
                   {products
                     .filter((p) => p.active)
                     .map((p) => (

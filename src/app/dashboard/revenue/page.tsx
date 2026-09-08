@@ -119,10 +119,13 @@ export default function RevenuePage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Machine (optional)</Label>
-                <Select value={form.machineId} onValueChange={(v) => setForm((f) => ({ ...f, machineId: v }))}>
+                <Select
+                  value={form.machineId || "__none__"}
+                  onValueChange={(v) => setForm((f) => ({ ...f, machineId: v === "__none__" ? "" : v }))}
+                >
                   <SelectTrigger><SelectValue placeholder="All machines / total" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All machines / total</SelectItem>
+                    <SelectItem value="__none__">All machines / total</SelectItem>
                     {machines.map((m) => (
                       <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                     ))}

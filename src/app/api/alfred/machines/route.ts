@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   const pricingMap = new Map(
-    pricingRows.map(p => [`${p.machineType}:${p.modelNumber}`, p as PricingRecord])
+    pricingRows.map(p => [`${p.machineType}:${p.modelNumber}`, p as unknown as PricingRecord])
   );
 
   return NextResponse.json(

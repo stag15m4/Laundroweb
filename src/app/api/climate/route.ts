@@ -27,7 +27,7 @@ export async function GET() {
       return {
         id,
         name: info.result?.name ?? id,
-        online: info.result?.online ?? false,
+        online: info.result?.online ?? info.result?.is_online ?? Object.keys(statusMap).length > 0,
         status: statusMap,
       };
     })

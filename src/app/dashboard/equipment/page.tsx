@@ -233,6 +233,8 @@ function KeyCode({ value }: { value: string | null }) {
 function FloorMachineCard({
   machine,
   onSelect,
+  selected,
+  onToggleSelect,
   onMoveUp,
   onMoveDown,
   onZoneChange,
@@ -243,6 +245,8 @@ function FloorMachineCard({
 }: {
   machine: Machine;
   onSelect: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onZoneChange?: (zone: string) => void;
@@ -258,11 +262,23 @@ function FloorMachineCard({
 
   return (
     <div
-      className={`relative bg-white rounded-lg border border-gray-200 border-l-4 ${border} p-2.5 shadow-sm group cursor-pointer hover:shadow-md transition-shadow`}
+      className={`relative bg-white rounded-lg border border-gray-200 border-l-4 ${border} p-2.5 shadow-sm group cursor-pointer hover:shadow-md transition-shadow ${
+        selected ? "ring-2 ring-blue-500" : ""
+      }`}
       onClick={onSelect}
     >
       <div className="flex items-start justify-between gap-1">
         <div className="flex items-start gap-1.5 min-w-0">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            // The whole card opens the machine modal, so the checkbox has to
+            // keep its click to itself.
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select ${machine.name}`}
+            className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          />
           <Icon className={`h-3.5 w-3.5 mt-0.5 flex-shrink-0 ${iconColor}`} />
           <div className="min-w-0">
             <p className="text-xs font-semibold text-gray-900 truncate">{machine.name}</p>
@@ -1224,6 +1240,19 @@ export default function EquipmentPage() {
   const [parts, setParts] = useState<PartInventory[]>([]);
   const [manuals, setManuals] = useState<ManualDoc[]>([]);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null | undefined>(undefined);
+
+  // Which machines are ticked for export. Keyed by id so a selection survives
+  // machines being moved between zones or reordered.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState(emptyMachineForm);
 
@@ -1381,6 +1410,8 @@ export default function EquipmentPage() {
             <FloorMachineCard
               key={m.id}
               machine={m}
+              selected={selectedIds.has(m.id)}
+              onToggleSelect={() => toggleSelect(m.id)}
               onSelect={() => setSelectedMachine(m)}
               isFirst={i === 0}
               isLast={i === list.length - 1}
@@ -1406,9 +1437,30 @@ export default function EquipmentPage() {
   const outsideList = byZone("OUT");
   const maintList = byZone("MAINT");
   const unplacedMachines = machines.filter((m) => !m.floorZone && m.status !== "RETIRED");
+
+  // Retired machines are not rendered anywhere on this page, so they are not
+  // selectable and must not be swept up by "select all".
+  const selectableMachines = machines.filter((m) => m.status !== "RETIRED");
+  const allSelected =
+    selectableMachines.length > 0 && selectedIds.size === selectableMachines.length;
+
+  function toggleSelectAll() {
+    setSelectedIds(allSelected ? new Set() : new Set(selectableMachines.map((m) => m.id)));
+  }
   const outOfOrderCount = machines.filter((m) => m.status === "OUT_OF_ORDER").length;
 
   async function handleExportPDF() {
+    // Tick nothing and you get the whole active floor; tick machines and you
+    // get exactly those. Retired machines are excluded from the "everything"
+    // case because they are not shown on this page and the report's own
+    // subtitle counts active machines only.
+    const exportList =
+      selectedIds.size > 0
+        ? machines.filter((m) => selectedIds.has(m.id))
+        : selectableMachines;
+
+    if (exportList.length === 0) return;
+
     const { jsPDF } = await import("jspdf");
     const autoTable = (await import("jspdf-autotable")).default;
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
@@ -1419,12 +1471,22 @@ export default function EquipmentPage() {
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
-    doc.text("Equipment Inventory Report", 14, 18);
+    doc.text(
+      selectedIds.size > 0 ? "Equipment Report — Selected Machines" : "Equipment Inventory Report",
+      14,
+      18
+    );
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Generated: ${generated}`, 14, 26);
-    doc.text(`${machines.filter(m => m.status !== "RETIRED").length} active machines`, 14, 32);
+    doc.text(
+      selectedIds.size > 0
+        ? `${exportList.length} of ${selectableMachines.length} machines (selected)`
+        : `${exportList.length} active machines`,
+      14,
+      32
+    );
     doc.setTextColor(0);
 
     const statusLabel: Record<string, string> = {
@@ -1434,7 +1496,7 @@ export default function EquipmentPage() {
       RETIRED: "Retired",
     };
 
-    const sorted = [...machines].sort((a, b) =>
+    const sorted = [...exportList].sort((a, b) =>
       (typeLabel[a.type] ?? a.type).localeCompare(typeLabel[b.type] ?? b.type) ||
       a.name.localeCompare(b.name)
     );
@@ -1478,15 +1540,30 @@ export default function EquipmentPage() {
       doc.text(`Page ${i} of ${pageCount}`, w - 14, h - 8, { align: "right" });
     }
 
-    doc.save(`equipment-${new Date().toISOString().slice(0, 10)}.pdf`);
+    const stamp = new Date().toISOString().slice(0, 10);
+    doc.save(
+      selectedIds.size > 0 ? `equipment-selected-${stamp}.pdf` : `equipment-${stamp}.pdf`
+    );
   }
 
   return (
     <div>
       <Header title="Equipment" description="Floor plan, maintenance logs, and machine details">
+        {selectedIds.size > 0 && (
+          <span className="text-sm text-gray-500 self-center mr-1">
+            {selectedIds.size} selected
+          </span>
+        )}
+        <Button
+          variant="outline"
+          onClick={toggleSelectAll}
+          disabled={selectableMachines.length === 0}
+        >
+          {allSelected ? "Clear selection" : "Select all"}
+        </Button>
         <Button variant="outline" onClick={handleExportPDF} disabled={machines.length === 0}>
           <FileDown className="h-4 w-4 mr-2" />
-          Export PDF
+          {selectedIds.size > 0 ? `Export ${selectedIds.size} selected` : "Export PDF"}
         </Button>
         {isOwner && (
           <Button onClick={() => setAddOpen(true)}>
@@ -1656,6 +1733,8 @@ export default function EquipmentPage() {
                 <div key={m.id} className="w-40">
                   <FloorMachineCard
                     machine={m}
+                    selected={selectedIds.has(m.id)}
+                    onToggleSelect={() => toggleSelect(m.id)}
                     onSelect={() => setSelectedMachine(m)}
                     isFirst={i === 0}
                     isLast={i === frontList.length - 1}
@@ -1705,6 +1784,8 @@ export default function EquipmentPage() {
                   <div key={m.id} className="w-40">
                     <FloorMachineCard
                       machine={m}
+                      selected={selectedIds.has(m.id)}
+                      onToggleSelect={() => toggleSelect(m.id)}
                       onSelect={() => setSelectedMachine(m)}
                       isFirst={i === 0}
                       isLast={i === backList.length - 1}
@@ -1735,6 +1816,8 @@ export default function EquipmentPage() {
                 <div key={m.id} className="w-40">
                   <FloorMachineCard
                     machine={m}
+                    selected={selectedIds.has(m.id)}
+                    onToggleSelect={() => toggleSelect(m.id)}
                     onSelect={() => setSelectedMachine(m)}
                     isFirst={i === 0}
                     isLast={i === outsideList.length - 1}
@@ -1765,6 +1848,8 @@ export default function EquipmentPage() {
                 <div key={m.id} className="w-40">
                   <FloorMachineCard
                     machine={m}
+                    selected={selectedIds.has(m.id)}
+                    onToggleSelect={() => toggleSelect(m.id)}
                     onSelect={() => setSelectedMachine(m)}
                     isFirst={i === 0}
                     isLast={i === maintList.length - 1}
@@ -1812,12 +1897,22 @@ export default function EquipmentPage() {
               return (
                 <Card
                   key={m.id}
-                  className="cursor-pointer hover:shadow-md transition-shadow"
+                  className={`cursor-pointer hover:shadow-md transition-shadow ${
+                    selectedIds.has(m.id) ? "ring-2 ring-blue-500" : ""
+                  }`}
                   onClick={() => setSelectedMachine(m)}
                 >
                   <CardContent className="p-3">
                     <div className="flex items-start justify-between mb-1">
                       <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(m.id)}
+                          onChange={() => toggleSelect(m.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label={`Select ${m.name}`}
+                          className="h-3.5 w-3.5 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
                         <Icon className={`h-4 w-4 ${iconColor}`} />
                         <div>
                           <p className="text-sm font-semibold">{m.name}</p>

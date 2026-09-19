@@ -7,6 +7,7 @@ import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -45,6 +46,8 @@ import {
   Upload,
   Trash2,
   Copy,
+  StickyNote,
+  Droplets,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -66,6 +69,14 @@ type Machine = {
   floorZone: string | null;
   floorOrder: number | null;
   _count: { maintenanceLogs: number };
+};
+
+type MachineNote = {
+  id: string;
+  content: string;
+  category: string;
+  createdAt: string;
+  author: { name: string } | null;
 };
 
 type ManualDoc = {
@@ -138,6 +149,7 @@ const typeIcon: Record<string, React.ElementType> = {
   VENDING: ShoppingCart,
   WATER_HEATER: Thermometer,
   AIR_CONDITIONER: AirVent,
+  PLUMBING_DEVICE: Droplets,
   OTHER: Wrench,
 };
 
@@ -147,6 +159,7 @@ const typeColor: Record<string, string> = {
   VENDING: "text-purple-500",
   WATER_HEATER: "text-red-400",
   AIR_CONDITIONER: "text-cyan-500",
+  PLUMBING_DEVICE: "text-sky-600",
   OTHER: "text-gray-400",
 };
 
@@ -156,6 +169,7 @@ const typeLabel: Record<string, string> = {
   VENDING: "Vending Machine",
   WATER_HEATER: "Water Heater",
   AIR_CONDITIONER: "Air Conditioner",
+  PLUMBING_DEVICE: "Plumbing Device",
   OTHER: "Other",
 };
 
@@ -166,6 +180,16 @@ const statusBorder: Record<string, string> = {
   RETIRED: "border-l-gray-300",
 };
 
+/**
+ * Card tint by status. The 4px left edge alone is easy to miss when scanning a
+ * floor of 29 machines, so a machine that is down colours its whole card.
+ */
+const statusCard: Record<string, string> = {
+  OPERATIONAL: "bg-white border-gray-200",
+  OUT_OF_ORDER: "bg-red-50 border-red-300",
+  NEEDS_SERVICE: "bg-amber-50 border-amber-300",
+  RETIRED: "bg-gray-100 border-gray-200",
+};
 const statusDot: Record<string, string> = {
   OPERATIONAL: "bg-green-400",
   OUT_OF_ORDER: "bg-red-400",
@@ -259,10 +283,11 @@ function FloorMachineCard({
   const iconColor = typeColor[machine.type] ?? "text-gray-400";
   const border = statusBorder[machine.status] ?? "border-l-gray-200";
   const dot = statusDot[machine.status] ?? "bg-gray-200";
+  const tint = statusCard[machine.status] ?? "bg-white border-gray-200";
 
   return (
     <div
-      className={`relative bg-white rounded-lg border border-gray-200 border-l-4 ${border} p-2.5 shadow-sm group cursor-pointer hover:shadow-md transition-shadow ${
+      className={`relative rounded-lg border border-l-4 ${tint} ${border} p-2.5 shadow-sm group cursor-pointer hover:shadow-md transition-shadow ${
         selected ? "ring-2 ring-blue-500" : ""
       }`}
       onClick={onSelect}
@@ -362,6 +387,7 @@ function MachineDetailModal({
   open,
   onClose,
   onMachineUpdated,
+  onMachinePatched,
   onMachineCloned,
   onMachineDeleted,
   onPartsChanged,
@@ -374,6 +400,7 @@ function MachineDetailModal({
   open: boolean;
   onClose: () => void;
   onMachineUpdated: (m: Machine) => void;
+  onMachinePatched: (m: Machine) => void;
   onMachineCloned: (m: Machine) => void;
   onMachineDeleted: (id: string) => void;
   onPartsChanged: (partId: string, delta: number) => void;
@@ -400,6 +427,16 @@ function MachineDetailModal({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [uploadingManual, setUploadingManual] = useState(false);
 
+  // ── Status + notes, the day-to-day actions ───────────────────────────
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [machineNotes, setMachineNotes] = useState<MachineNote[]>([]);
+  // A status that needs an explanation before it is saved.
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState("");
+
   const machineKey = machine === null ? "building" : machine?.id;
 
   useEffect(() => {
@@ -408,6 +445,19 @@ function MachineDetailModal({
     setShowForm(false);
     setShowMore(false);
     setCollapsed(true);
+    setNoteOpen(false);
+    setNoteText("");
+    setMachineNotes([]);
+    setPendingStatus(null);
+    setStatusError("");
+    if (machineKey && machineKey !== "building") {
+      fetch("/api/notes")
+        .then((r) => r.json())
+        .then((all: (MachineNote & { machine: { id: string } | null })[]) =>
+          setMachineNotes(all.filter((n) => n.machine?.id === machineKey))
+        )
+        .catch(() => undefined);
+    }
     setConfirmDelete(false);
     setPartsUsed([]);
     setAddPartId("");
@@ -594,6 +644,81 @@ function MachineDetailModal({
     if (res.ok) onManualsChanged(null, manual.id);
   }
 
+  /**
+   * Returning a machine to service saves straight away. Taking it out of
+   * service opens the note box first and saves nothing until there is an
+   * explanation, so the status and its reason land together.
+   */
+  function changeStatus(next: string) {
+    if (!machine || next === machine.status) return;
+    setStatusError("");
+    if (next !== "OPERATIONAL") {
+      setPendingStatus(next);
+      setNoteOpen(true);
+      return;
+    }
+    void commitStatus(next, "");
+  }
+
+  async function commitStatus(next: string, note: string) {
+    if (!machine) return;
+    setStatusSaving(true);
+    const res = await fetch(`/api/equipment/${machine.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: next, note }),
+    });
+    setStatusSaving(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setStatusError(data.error ?? "Could not change the status.");
+      return;
+    }
+
+    onMachinePatched(await res.json());
+    setPendingStatus(null);
+    setNoteOpen(false);
+    setNoteText("");
+
+    // The note written alongside the status is not in the returned machine,
+    // so pull this machine's notes again rather than guessing at the shape.
+    fetch("/api/notes")
+      .then((r) => r.json())
+      .then((all: (MachineNote & { machine: { id: string } | null })[]) =>
+        setMachineNotes(all.filter((n) => n.machine?.id === machine.id))
+      )
+      .catch(() => undefined);
+  }
+
+  async function saveNote(e: React.FormEvent) {
+    e.preventDefault();
+    if (!machine || !noteText.trim()) return;
+
+    // A pending status change writes the note and the status together.
+    if (pendingStatus) {
+      await commitStatus(pendingStatus, noteText.trim());
+      return;
+    }
+
+    setNoteSaving(true);
+    const res = await fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: noteText.trim(),
+        category: "maintenance",
+        machineId: machine.id,
+      }),
+    });
+    setNoteSaving(false);
+    if (!res.ok) return;
+    const created: MachineNote = await res.json();
+    setMachineNotes((prev) => [created, ...prev]);
+    setNoteText("");
+    setNoteOpen(false);
+  }
+
   return (
     <>
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -632,19 +757,146 @@ function MachineDetailModal({
         <div className="overflow-y-auto flex-1 space-y-4 pr-1 pt-1">
           {mode === "maintenance" ? (
             <>
-              {/* Action row: Log Service + Manual */}
+              {/* Status — the most common reason to open a machine, so it sits
+                  at the top and needs no admin rights to change. */}
+              {machine && (
+                <div className="rounded-lg border bg-gray-50 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Status
+                    </span>
+                    {statusSaving && <span className="text-xs text-gray-400">Saving…</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        ["OPERATIONAL", "Operational", "bg-green-600"],
+                        ["NEEDS_SERVICE", "Needs Service", "bg-amber-500"],
+                        ["OUT_OF_ORDER", "Out of Order", "bg-red-600"],
+                        ["RETIRED", "Retired", "bg-gray-500"],
+                      ] as const
+                    ).map(([value, label, colour]) => {
+                      const active = (pendingStatus ?? machine.status) === value;
+                      const awaiting = pendingStatus === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          disabled={statusSaving}
+                          onClick={() => changeStatus(value)}
+                          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                            active
+                              ? `border-transparent bg-white shadow-sm ring-2 ring-offset-1 text-gray-900 ${
+                                  awaiting ? "ring-amber-500" : "ring-gray-900"
+                                }`
+                              : "border-gray-200 bg-white text-gray-500 hover:border-gray-400 hover:text-gray-800"
+                          }`}
+                        >
+                          <span className={`h-2 w-2 rounded-full ${colour}`} />
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {pendingStatus && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      Add a note below to confirm this change.
+                    </p>
+                  )}
+                  {statusError && (
+                    <p className="mt-2 text-xs text-red-600">{statusError}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Action row: Log Service + Note + Manual */}
               {!showForm && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Button size="sm" onClick={() => setShowForm(true)}>
                     <Plus className="h-3.5 w-3.5 mr-1.5" />
                     Log Service
                   </Button>
+                  {machine && (
+                    <Button size="sm" variant="outline" onClick={() => setNoteOpen((v) => !v)}>
+                      <StickyNote className="h-3.5 w-3.5 mr-1.5" />
+                      Add Note
+                    </Button>
+                  )}
                   {manual && (
                     <Button size="sm" variant="outline" onClick={() => setViewerOpen(true)}>
                       <BookOpen className="h-3.5 w-3.5 mr-1.5" />
                       {manual.name}
                     </Button>
                   )}
+                </div>
+              )}
+
+              {/* Note composer */}
+              {noteOpen && machine && (
+                <form onSubmit={saveNote} className="rounded-lg border p-3 space-y-2 bg-white">
+                  <Label className="text-xs">
+                    {pendingStatus
+                      ? `Why is ${machine.name} ${pendingStatus.replace(/_/g, " ").toLowerCase()}?`
+                      : `Note about ${machine.name}`}
+                  </Label>
+                  <Textarea
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    rows={3}
+                    autoFocus
+                    placeholder="What happened, what you tried, what it needs…"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={noteSaving || statusSaving || !noteText.trim()}
+                    >
+                      {noteSaving || statusSaving
+                        ? "Saving…"
+                        : pendingStatus
+                        ? `Mark ${pendingStatus.replace(/_/g, " ").toLowerCase()}`
+                        : "Save Note"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setNoteOpen(false);
+                        setNoteText("");
+                        setPendingStatus(null);
+                        setStatusError("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Saved notes also appear on the Notes page.
+                  </p>
+                </form>
+              )}
+
+              {/* Notes recorded against this machine */}
+              {machineNotes.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Notes ({machineNotes.length})
+                  </p>
+                  {machineNotes.map((note) => (
+                    <div key={note.id} className="rounded-lg border bg-amber-50/60 p-3">
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.content}</p>
+                      <p className="mt-1.5 text-xs text-gray-400">
+                        {note.author?.name ?? "Unknown"} ·{" "}
+                        {new Date(note.createdAt).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -993,6 +1245,7 @@ function MachineDetailModal({
                       <SelectItem value="VENDING">Vending Machine</SelectItem>
                       <SelectItem value="WATER_HEATER">Water Heater</SelectItem>
                       <SelectItem value="AIR_CONDITIONER">Air Conditioner</SelectItem>
+                      <SelectItem value="PLUMBING_DEVICE">Plumbing Device</SelectItem>
                       <SelectItem value="OTHER">Other</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1353,6 +1606,18 @@ export default function EquipmentPage() {
     setSelectedMachine(undefined);
   }
 
+  /**
+   * Updates a machine without dismissing its modal.
+   *
+   * Saving the setup form closes the dialog, which is right for a deliberate
+   * edit. Flipping a status is not that: you mark a machine out of order and
+   * then want to say why, so the dialog has to stay put.
+   */
+  function handleMachinePatched(updated: Machine) {
+    setMachines((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    setSelectedMachine((prev) => (prev && prev.id === updated.id ? updated : prev));
+  }
+
   function handleMachineCloned(cloned: Machine) {
     setMachines((prev) => [...prev, cloned]);
     setSelectedMachine(undefined);
@@ -1613,6 +1878,7 @@ export default function EquipmentPage() {
                     <SelectItem value="VENDING">Vending Machine</SelectItem>
                     <SelectItem value="WATER_HEATER">Water Heater</SelectItem>
                     <SelectItem value="AIR_CONDITIONER">Air Conditioner</SelectItem>
+                    <SelectItem value="PLUMBING_DEVICE">Plumbing Device</SelectItem>
                     <SelectItem value="OTHER">Other</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1898,8 +2164,8 @@ export default function EquipmentPage() {
                 <Card
                   key={m.id}
                   className={`cursor-pointer hover:shadow-md transition-shadow ${
-                    selectedIds.has(m.id) ? "ring-2 ring-blue-500" : ""
-                  }`}
+                    statusCard[m.status] ?? "bg-white border-gray-200"
+                  } ${selectedIds.has(m.id) ? "ring-2 ring-blue-500" : ""}`}
                   onClick={() => setSelectedMachine(m)}
                 >
                   <CardContent className="p-3">
@@ -1983,6 +2249,7 @@ export default function EquipmentPage() {
         open={selectedMachine !== undefined}
         onClose={() => setSelectedMachine(undefined)}
         onMachineUpdated={handleMachineUpdated}
+        onMachinePatched={handleMachinePatched}
         onMachineCloned={handleMachineCloned}
         onMachineDeleted={handleMachineDeleted}
         onPartsChanged={handlePartsChanged}

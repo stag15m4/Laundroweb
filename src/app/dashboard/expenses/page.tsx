@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, Receipt, Trash2 } from "lucide-react";
+import { Plus, Receipt, Trash2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 
 type Expense = {
@@ -31,10 +31,54 @@ const categories = [
 
 const emptyForm = { date: format(new Date(), "yyyy-MM-dd"), category: "Supplies", description: "", amount: "", vendor: "", notes: "" };
 
+/** Prisma returns a timestamp; <input type="date"> wants a bare yyyy-MM-dd. */
+function toDateInput(iso: string): string {
+  return iso ? iso.slice(0, 10) : "";
+}
+
+/**
+ * A new expense in a given category usually goes to the same vendor as the
+ * last one, so that is filled in from the most recent expense in that
+ * category. Amount and description always differ, so they stay blank.
+ */
+function carryForward(category: string, expenses: Expense[]) {
+  const previous = expenses
+    .filter((e) => e.category === category)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+  return {
+    ...emptyForm,
+    date: format(new Date(), "yyyy-MM-dd"),
+    category,
+    vendor: previous?.vendor ?? "",
+  };
+}
+
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState<Expense | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function openAdd() {
+    setEditing(null);
+    setForm(carryForward(emptyForm.category, expenses));
+    setOpen(true);
+  }
+
+  function openEdit(expense: Expense) {
+    setEditing(expense);
+    setForm({
+      date: toDateInput(expense.date),
+      category: expense.category,
+      description: expense.description,
+      amount: String(expense.amount),
+      vendor: expense.vendor ?? "",
+      notes: expense.notes ?? "",
+    });
+    setOpen(true);
+  }
 
   useEffect(() => {
     fetch("/api/expenses").then((r) => r.json()).then(setExpenses);
@@ -47,18 +91,28 @@ export default function ExpensesPage() {
     return acc;
   }, {} as Record<string, number>);
 
-  async function handleAdd(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const res = await fetch("/api/expenses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (res.ok) {
+    setSaving(true);
+    try {
+      const res = await fetch(
+        editing ? `/api/expenses/${editing.id}` : "/api/expenses",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        }
+      );
+      if (!res.ok) return;
       const expense = await res.json();
-      setExpenses((prev) => [expense, ...prev]);
+      setExpenses((prev) =>
+        editing ? prev.map((x) => (x.id === expense.id ? expense : x)) : [expense, ...prev]
+      );
       setOpen(false);
+      setEditing(null);
       setForm(emptyForm);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -71,7 +125,7 @@ export default function ExpensesPage() {
   return (
     <div>
       <Header title="Expenses" description="Track all business costs and spending">
-        <Button onClick={() => setOpen(true)}>
+        <Button onClick={openAdd}>
           <Plus className="h-4 w-4 mr-2" />
           Add Expense
         </Button>
@@ -86,8 +140,10 @@ export default function ExpensesPage() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Expense</DialogTitle></DialogHeader>
-          <form onSubmit={handleAdd} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Expense" : "Add Expense"}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Date</Label>
@@ -99,7 +155,16 @@ export default function ExpensesPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Category</Label>
-                <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
+                <Select
+                  value={form.category}
+                  onValueChange={(v) =>
+                    setForm((f) =>
+                      editing
+                        ? { ...f, category: v }
+                        : { ...carryForward(v, expenses), date: f.date, amount: f.amount, description: f.description, notes: f.notes }
+                    )
+                  }
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
@@ -117,7 +182,9 @@ export default function ExpensesPage() {
                 <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
               </div>
             </div>
-            <Button type="submit" className="w-full">Save Expense</Button>
+            <Button type="submit" className="w-full" disabled={saving}>
+              {saving ? "Saving…" : editing ? "Save Changes" : "Save Expense"}
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -174,9 +241,14 @@ export default function ExpensesPage() {
                       <td className="px-6 py-3 text-gray-500">{e.vendor ?? "—"}</td>
                       <td className="px-6 py-3 font-semibold text-red-600">{formatCurrency(e.amount)}</td>
                       <td className="px-6 py-3">
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}>
-                          <Trash2 className="h-4 w-4 text-red-400" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(e)} title="Edit expense">
+                            <Pencil className="h-4 w-4 text-gray-400" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)} title="Delete expense">
+                            <Trash2 className="h-4 w-4 text-red-400" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

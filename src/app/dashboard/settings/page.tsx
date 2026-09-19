@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { rememberAccount, forgetAccount, loadAccounts } from "@/lib/accounts";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { User, Plus, Pencil, Trash2, KeyRound, Shield } from "lucide-react";
+import { User, Plus, Pencil, Trash2, KeyRound, Shield, Smartphone } from "lucide-react";
 
 type UserRecord = {
   id: string;
@@ -97,6 +98,82 @@ export default function SettingsPage() {
       const data = await res.json();
       setPwMsg(data.error ?? "Failed to change password.");
     }
+  }
+
+  // ── PIN unlock ─────────────────────────────────────────────────────────
+  const [hasPin, setHasPin] = useState(false);
+  const [deviceCount, setDeviceCount] = useState(0);
+  const [pinForm, setPinForm] = useState({ pin: "", confirmPin: "", password: "" });
+  const [pinMsg, setPinMsg] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/pin")
+      .then((r) => r.json())
+      .then((d) => {
+        setHasPin(Boolean(d.hasPin));
+        setDeviceCount(Array.isArray(d.devices) ? d.devices.length : 0);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function handlePinSave(e: React.FormEvent) {
+    e.preventDefault();
+    setPinMsg("");
+
+    if (pinForm.pin !== pinForm.confirmPin) {
+      setPinMsg("PINs do not match.");
+      return;
+    }
+
+    setPinSaving(true);
+    const res = await fetch("/api/pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pin: pinForm.pin,
+        password: pinForm.password,
+        label: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : null,
+      }),
+    });
+    setPinSaving(false);
+
+    const data = await res.json();
+    if (!res.ok) {
+      setPinMsg(data.error ?? "Could not set PIN.");
+      return;
+    }
+
+    // Store the one-time device token so this browser can offer PIN unlock.
+    if (session?.user?.email) {
+      rememberAccount({
+        email: session.user.email,
+        name: session.user.name ?? session.user.email,
+        deviceToken: data.deviceToken,
+      });
+    }
+    setHasPin(true);
+    setDeviceCount((n) => n + 1);
+    setPinForm({ pin: "", confirmPin: "", password: "" });
+    setPinMsg("PIN set. This device can now unlock with it.");
+  }
+
+  async function handlePinRemove() {
+    if (!confirm("Remove your PIN and sign out every device that uses it?")) return;
+    setPinSaving(true);
+    await fetch("/api/pin", { method: "DELETE" });
+    setPinSaving(false);
+
+    // Drop the local token too, so the picker stops offering PIN unlock.
+    for (const account of loadAccounts()) {
+      if (account.email === session?.user?.email) {
+        forgetAccount(account.email);
+        rememberAccount({ email: account.email, name: account.name });
+      }
+    }
+    setHasPin(false);
+    setDeviceCount(0);
+    setPinMsg("PIN removed.");
   }
 
   async function handleAddUser(e: React.FormEvent) {
@@ -246,6 +323,91 @@ export default function SettingsPage() {
               <Button type="submit" disabled={pwSaving}>
                 {pwSaving ? "Saving…" : "Change Password"}
               </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* PIN unlock */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Smartphone className="h-4 w-4" />
+              PIN Unlock
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-500 mb-4">
+              Set a PIN to sign in faster on devices you already use. The PIN
+              only works on a device you set it up on, never on its own — so it
+              is useless to anyone who learns it elsewhere. Five wrong attempts
+              lock the account for 15 minutes.
+            </p>
+
+            {hasPin && (
+              <p className="text-sm text-green-700 bg-green-50 rounded-md px-3 py-2 mb-4">
+                PIN is active on {deviceCount} device{deviceCount === 1 ? "" : "s"}.
+                Setting a new PIN below also enrolls whichever device you are
+                using right now.
+              </p>
+            )}
+
+            <form onSubmit={handlePinSave} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>PIN (4–8 digits)</Label>
+                  <Input
+                    type="password"
+                    inputMode="numeric"
+                    value={pinForm.pin}
+                    onChange={(e) =>
+                      setPinForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "").slice(0, 8) }))
+                    }
+                    required
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Confirm PIN</Label>
+                  <Input
+                    type="password"
+                    inputMode="numeric"
+                    value={pinForm.confirmPin}
+                    onChange={(e) =>
+                      setPinForm((f) => ({ ...f, confirmPin: e.target.value.replace(/\D/g, "").slice(0, 8) }))
+                    }
+                    required
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Your Password</Label>
+                <Input
+                  type="password"
+                  value={pinForm.password}
+                  onChange={(e) => setPinForm((f) => ({ ...f, password: e.target.value }))}
+                  required
+                  autoComplete="current-password"
+                />
+                <p className="text-xs text-gray-400">
+                  Confirms it is really you, not someone at a screen you left open.
+                </p>
+              </div>
+              {pinMsg && (
+                <p className={`text-sm ${pinMsg.includes("set") || pinMsg.includes("removed") ? "text-green-600" : "text-red-600"}`}>
+                  {pinMsg}
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={pinSaving}>
+                  {pinSaving ? "Saving…" : hasPin ? "Replace PIN" : "Set PIN"}
+                </Button>
+                {hasPin && (
+                  <Button type="button" variant="outline" onClick={handlePinRemove} disabled={pinSaving}>
+                    Remove PIN
+                  </Button>
+                )}
+              </div>
             </form>
           </CardContent>
         </Card>

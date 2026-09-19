@@ -1,10 +1,22 @@
 import { PrismaClient, Role, MachineType, MachineStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const ownerPassword = await bcrypt.hash("owner1234", 12);
+  // Seed passwords come from the environment. A hardcoded default would ship a
+  // known credential to every deployment that ever ran this seed; when nothing
+  // is supplied a random one is generated and printed once instead.
+  function seedPassword(envVar: string): string {
+    const supplied = process.env[envVar];
+    if (supplied) return supplied;
+    const generated = randomBytes(12).toString("base64url");
+    console.log(`  ${envVar} not set — generated: ${generated}`);
+    return generated;
+  }
+
+  const ownerPassword = await bcrypt.hash(seedPassword("SEED_OWNER_PASSWORD"), 12);
   const owner = await prisma.user.upsert({
     where: { email: "owner@laundromat.local" },
     update: {},
@@ -16,7 +28,7 @@ async function main() {
     },
   });
 
-  const staffPassword = await bcrypt.hash("staff1234", 12);
+  const staffPassword = await bcrypt.hash(seedPassword("SEED_STAFF_PASSWORD"), 12);
   await prisma.user.upsert({
     where: { email: "staff@laundromat.local" },
     update: {},

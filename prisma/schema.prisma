@@ -19,6 +19,7 @@ enum MachineType {
   WATER_HEATER
   AIR_CONDITIONER
   OTHER
+  PLUMBING_DEVICE
 }
 
 enum MachineStatus {

@@ -47,6 +47,7 @@ import {
   Trash2,
   Copy,
   StickyNote,
+  Droplets,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -148,6 +149,7 @@ const typeIcon: Record<string, React.ElementType> = {
   VENDING: ShoppingCart,
   WATER_HEATER: Thermometer,
   AIR_CONDITIONER: AirVent,
+  PLUMBING_DEVICE: Droplets,
   OTHER: Wrench,
 };
 
@@ -157,6 +159,7 @@ const typeColor: Record<string, string> = {
   VENDING: "text-purple-500",
   WATER_HEATER: "text-red-400",
   AIR_CONDITIONER: "text-cyan-500",
+  PLUMBING_DEVICE: "text-sky-600",
   OTHER: "text-gray-400",
 };
 
@@ -166,6 +169,7 @@ const typeLabel: Record<string, string> = {
   VENDING: "Vending Machine",
   WATER_HEATER: "Water Heater",
   AIR_CONDITIONER: "Air Conditioner",
+  PLUMBING_DEVICE: "Plumbing Device",
   OTHER: "Other",
 };
 
@@ -176,6 +180,16 @@ const statusBorder: Record<string, string> = {
   RETIRED: "border-l-gray-300",
 };
 
+/**
+ * Card tint by status. The 4px left edge alone is easy to miss when scanning a
+ * floor of 29 machines, so a machine that is down colours its whole card.
+ */
+const statusCard: Record<string, string> = {
+  OPERATIONAL: "bg-white border-gray-200",
+  OUT_OF_ORDER: "bg-red-50 border-red-300",
+  NEEDS_SERVICE: "bg-amber-50 border-amber-300",
+  RETIRED: "bg-gray-100 border-gray-200",
+};
 const statusDot: Record<string, string> = {
   OPERATIONAL: "bg-green-400",
   OUT_OF_ORDER: "bg-red-400",
@@ -269,10 +283,11 @@ function FloorMachineCard({
   const iconColor = typeColor[machine.type] ?? "text-gray-400";
   const border = statusBorder[machine.status] ?? "border-l-gray-200";
   const dot = statusDot[machine.status] ?? "bg-gray-200";
+  const tint = statusCard[machine.status] ?? "bg-white border-gray-200";
 
   return (
     <div
-      className={`relative bg-white rounded-lg border border-gray-200 border-l-4 ${border} p-2.5 shadow-sm group cursor-pointer hover:shadow-md transition-shadow ${
+      className={`relative rounded-lg border border-l-4 ${tint} ${border} p-2.5 shadow-sm group cursor-pointer hover:shadow-md transition-shadow ${
         selected ? "ring-2 ring-blue-500" : ""
       }`}
       onClick={onSelect}
@@ -1230,6 +1245,7 @@ function MachineDetailModal({
                       <SelectItem value="VENDING">Vending Machine</SelectItem>
                       <SelectItem value="WATER_HEATER">Water Heater</SelectItem>
                       <SelectItem value="AIR_CONDITIONER">Air Conditioner</SelectItem>
+                      <SelectItem value="PLUMBING_DEVICE">Plumbing Device</SelectItem>
                       <SelectItem value="OTHER">Other</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1862,6 +1878,7 @@ export default function EquipmentPage() {
                     <SelectItem value="VENDING">Vending Machine</SelectItem>
                     <SelectItem value="WATER_HEATER">Water Heater</SelectItem>
                     <SelectItem value="AIR_CONDITIONER">Air Conditioner</SelectItem>
+                    <SelectItem value="PLUMBING_DEVICE">Plumbing Device</SelectItem>
                     <SelectItem value="OTHER">Other</SelectItem>
                   </SelectContent>
                 </Select>
@@ -2147,8 +2164,8 @@ export default function EquipmentPage() {
                 <Card
                   key={m.id}
                   className={`cursor-pointer hover:shadow-md transition-shadow ${
-                    selectedIds.has(m.id) ? "ring-2 ring-blue-500" : ""
-                  }`}
+                    statusCard[m.status] ?? "bg-white border-gray-200"
+                  } ${selectedIds.has(m.id) ? "ring-2 ring-blue-500" : ""}`}
                   onClick={() => setSelectedMachine(m)}
                 >
                   <CardContent className="p-3">

@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/utils";
-import { Plus, Pin, Trash2, BookOpen } from "lucide-react";
+import { Plus, Pin, Trash2, BookOpen, Wrench } from "lucide-react";
 
 type Note = {
   id: string;
@@ -19,6 +19,8 @@ type Note = {
   isPinned: boolean;
   createdAt: string;
   author: { name: string } | null;
+  /** Present when the note was written against a specific machine. */
+  machine: { id: string; name: string; status: string } | null;
 };
 
 const categories = ["general", "shift", "staff", "maintenance", "customer", "reminder"];
@@ -134,9 +136,20 @@ export default function NotesPage() {
               <Card key={n.id} className={n.isPinned ? "border-yellow-300 shadow-md" : ""}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between mb-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${categoryColors[n.category] ?? "bg-gray-100 text-gray-700"}`}>
-                      {n.category}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${categoryColors[n.category] ?? "bg-gray-100 text-gray-700"}`}>
+                        {n.category}
+                      </span>
+                      {n.machine && (
+                        <span
+                          className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700"
+                          title={`Status: ${n.machine.status.replace(/_/g, " ").toLowerCase()}`}
+                        >
+                          <Wrench className="h-3 w-3" />
+                          {n.machine.name}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex gap-1">
                       <button onClick={() => togglePin(n)} title={n.isPinned ? "Unpin" : "Pin"}>
                         <Pin className={`h-3.5 w-3.5 ${n.isPinned ? "text-yellow-500 fill-yellow-400" : "text-gray-300"}`} />

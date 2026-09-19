@@ -9,7 +9,10 @@ export async function GET() {
 
   const notes = await prisma.note.findMany({
     orderBy: [{ isPinned: "desc" }, { createdAt: "desc" }],
-    include: { author: { select: { name: true } } },
+    include: {
+      author: { select: { name: true } },
+      machine: { select: { id: true, name: true, status: true } },
+    },
   });
   return NextResponse.json(notes);
 }
@@ -27,8 +30,12 @@ export async function POST(req: NextRequest) {
       category: body.category ?? "general",
       isPinned: body.isPinned ?? false,
       authorId: userId ?? null,
+      machineId: body.machineId ?? null,
     },
-    include: { author: { select: { name: true } } },
+    include: {
+      author: { select: { name: true } },
+      machine: { select: { id: true, name: true, status: true } },
+    },
   });
   return NextResponse.json(note, { status: 201 });
 }

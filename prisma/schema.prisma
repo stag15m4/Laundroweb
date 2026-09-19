@@ -114,6 +114,7 @@ model Machine {
   revenueEntries       RevenueEntry[]
   manual               ManualDocument?
   vendingSlots         VendingSlot[]
+  noteEntries          Note[]
 }
 
 model MachineModelPricing {
@@ -337,8 +338,14 @@ model Note {
   isPinned  Boolean  @default(false)
   authorId  String?
   author    User?    @relation(fields: [authorId], references: [id])
+  // Set when the note was written against a specific machine. Left null for
+  // general shop notes, so both kinds live in one list.
+  machineId String?
+  machine   Machine? @relation(fields: [machineId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([machineId])
 }
 
 model ManualDocument {

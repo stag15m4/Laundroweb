@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -10,23 +11,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   const { id } = await params;
   const body = await req.json();
-  const machine = await prisma.machine.update({
-    where: { id },
-    data: {
-      name: body.name,
-      type: body.type,
-      brand: body.brand || null,
-      model: body.model || null,
-      serialNumber: body.serialNumber || null,
-      location: body.location || null,
-      installDate: body.installDate ? new Date(body.installDate) : null,
-      warrantyExpiry: body.warrantyExpiry ? new Date(body.warrantyExpiry) : null,
-      status: body.status,
-      notes: body.notes || null,
-      keyCode: body.keyCode !== undefined ? (body.keyCode || null) : undefined,
-      cycleCount: body.cycleCount ?? undefined,
-    },
-  });
+  // Only fields the caller actually sent are touched. The previous version
+  // wrote `body.field || null` for the optional columns, so any partial update
+  // — sending just a status, say — silently blanked the brand, model, serial
+  // number, location, dates and notes.
+  const data: Prisma.MachineUpdateInput = {};
+  if (body.name !== undefined) data.name = body.name;
+  if (body.type !== undefined) data.type = body.type;
+  if (body.status !== undefined) data.status = body.status;
+  if (body.brand !== undefined) data.brand = body.brand || null;
+  if (body.model !== undefined) data.model = body.model || null;
+  if (body.serialNumber !== undefined) data.serialNumber = body.serialNumber || null;
+  if (body.location !== undefined) data.location = body.location || null;
+  if (body.notes !== undefined) data.notes = body.notes || null;
+  if (body.keyCode !== undefined) data.keyCode = body.keyCode || null;
+  if (body.cycleCount !== undefined) data.cycleCount = body.cycleCount;
+  if (body.installDate !== undefined) {
+    data.installDate = body.installDate ? new Date(body.installDate) : null;
+  }
+  if (body.warrantyExpiry !== undefined) {
+    data.warrantyExpiry = body.warrantyExpiry ? new Date(body.warrantyExpiry) : null;
+  }
+
+  const machine = await prisma.machine.update({ where: { id }, data });
   return NextResponse.json(machine);
 }
 

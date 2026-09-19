@@ -28,6 +28,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const authorId = (session.user as { id?: string }).id ?? null;
   const trimmed = typeof note === "string" ? note.trim() : "";
 
+  // Taking a machine out of service has to say why. A machine sitting dark
+  // with no explanation is the thing that wastes a morning later — nobody can
+  // tell whether it is waiting on a part, already fixed, or never looked at.
+  // Enforced here rather than only in the form, so it holds for any caller.
+  if (status !== "OPERATIONAL" && !trimmed) {
+    return NextResponse.json(
+      { error: "A note is required when a machine is not operational." },
+      { status: 400 }
+    );
+  }
+
   // One transaction so a machine is never left marked out of order with its
   // explanation missing.
   const [machine] = await prisma.$transaction([

@@ -418,6 +418,9 @@ function MachineDetailModal({
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [machineNotes, setMachineNotes] = useState<MachineNote[]>([]);
+  // A status that needs an explanation before it is saved.
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState("");
 
   const machineKey = machine === null ? "building" : machine?.id;
 
@@ -430,6 +433,8 @@ function MachineDetailModal({
     setNoteOpen(false);
     setNoteText("");
     setMachineNotes([]);
+    setPendingStatus(null);
+    setStatusError("");
     if (machineKey && machineKey !== "building") {
       fetch("/api/notes")
         .then((r) => r.json())
@@ -624,21 +629,63 @@ function MachineDetailModal({
     if (res.ok) onManualsChanged(null, manual.id);
   }
 
-  async function changeStatus(next: string) {
+  /**
+   * Returning a machine to service saves straight away. Taking it out of
+   * service opens the note box first and saves nothing until there is an
+   * explanation, so the status and its reason land together.
+   */
+  function changeStatus(next: string) {
     if (!machine || next === machine.status) return;
+    setStatusError("");
+    if (next !== "OPERATIONAL") {
+      setPendingStatus(next);
+      setNoteOpen(true);
+      return;
+    }
+    void commitStatus(next, "");
+  }
+
+  async function commitStatus(next: string, note: string) {
+    if (!machine) return;
     setStatusSaving(true);
     const res = await fetch(`/api/equipment/${machine.id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
+      body: JSON.stringify({ status: next, note }),
     });
     setStatusSaving(false);
-    if (res.ok) onMachinePatched(await res.json());
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setStatusError(data.error ?? "Could not change the status.");
+      return;
+    }
+
+    onMachinePatched(await res.json());
+    setPendingStatus(null);
+    setNoteOpen(false);
+    setNoteText("");
+
+    // The note written alongside the status is not in the returned machine,
+    // so pull this machine's notes again rather than guessing at the shape.
+    fetch("/api/notes")
+      .then((r) => r.json())
+      .then((all: (MachineNote & { machine: { id: string } | null })[]) =>
+        setMachineNotes(all.filter((n) => n.machine?.id === machine.id))
+      )
+      .catch(() => undefined);
   }
 
   async function saveNote(e: React.FormEvent) {
     e.preventDefault();
     if (!machine || !noteText.trim()) return;
+
+    // A pending status change writes the note and the status together.
+    if (pendingStatus) {
+      await commitStatus(pendingStatus, noteText.trim());
+      return;
+    }
+
     setNoteSaving(true);
     const res = await fetch("/api/notes", {
       method: "POST",
@@ -714,7 +761,8 @@ function MachineDetailModal({
                         ["RETIRED", "Retired", "bg-gray-500"],
                       ] as const
                     ).map(([value, label, colour]) => {
-                      const active = machine.status === value;
+                      const active = (pendingStatus ?? machine.status) === value;
+                      const awaiting = pendingStatus === value;
                       return (
                         <button
                           key={value}
@@ -723,7 +771,9 @@ function MachineDetailModal({
                           onClick={() => changeStatus(value)}
                           className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
                             active
-                              ? "border-transparent bg-white shadow-sm ring-2 ring-offset-1 ring-gray-900 text-gray-900"
+                              ? `border-transparent bg-white shadow-sm ring-2 ring-offset-1 text-gray-900 ${
+                                  awaiting ? "ring-amber-500" : "ring-gray-900"
+                                }`
                               : "border-gray-200 bg-white text-gray-500 hover:border-gray-400 hover:text-gray-800"
                           }`}
                         >
@@ -733,6 +783,14 @@ function MachineDetailModal({
                       );
                     })}
                   </div>
+                  {pendingStatus && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      Add a note below to confirm this change.
+                    </p>
+                  )}
+                  {statusError && (
+                    <p className="mt-2 text-xs text-red-600">{statusError}</p>
+                  )}
                 </div>
               )}
 
@@ -761,7 +819,11 @@ function MachineDetailModal({
               {/* Note composer */}
               {noteOpen && machine && (
                 <form onSubmit={saveNote} className="rounded-lg border p-3 space-y-2 bg-white">
-                  <Label className="text-xs">Note about {machine.name}</Label>
+                  <Label className="text-xs">
+                    {pendingStatus
+                      ? `Why is ${machine.name} ${pendingStatus.replace(/_/g, " ").toLowerCase()}?`
+                      : `Note about ${machine.name}`}
+                  </Label>
                   <Textarea
                     value={noteText}
                     onChange={(e) => setNoteText(e.target.value)}
@@ -770,8 +832,16 @@ function MachineDetailModal({
                     placeholder="What happened, what you tried, what it needs…"
                   />
                   <div className="flex items-center gap-2">
-                    <Button type="submit" size="sm" disabled={noteSaving || !noteText.trim()}>
-                      {noteSaving ? "Saving…" : "Save Note"}
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={noteSaving || statusSaving || !noteText.trim()}
+                    >
+                      {noteSaving || statusSaving
+                        ? "Saving…"
+                        : pendingStatus
+                        ? `Mark ${pendingStatus.replace(/_/g, " ").toLowerCase()}`
+                        : "Save Note"}
                     </Button>
                     <Button
                       type="button"
@@ -780,6 +850,8 @@ function MachineDetailModal({
                       onClick={() => {
                         setNoteOpen(false);
                         setNoteText("");
+                        setPendingStatus(null);
+                        setStatusError("");
                       }}
                     >
                       Cancel

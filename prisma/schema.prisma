@@ -206,6 +206,10 @@ model RevenueEntry {
   source      RevenueSource @default(COIN)
   machineId   String?
   machine     Machine?      @relation(fields: [machineId], references: [id])
+  // Set when a collection covers a whole class of equipment rather than one
+  // machine — a coin pull from "the washers". Without this, a lump collection
+  // cannot be attributed, and turns per day has nothing to divide.
+  machineType MachineType?
   notes       String?
   collectedBy String?
   createdAt   DateTime      @default(now())

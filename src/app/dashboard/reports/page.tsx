@@ -7,18 +7,53 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, Zap, BarChart3 } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Zap, BarChart3, RefreshCw } from "lucide-react";
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 
 type RevenueEntry = { date: string; amount: string; source: string };
 type UtilityBill = { type: string; billingPeriodEnd: string; cost: string; usageAmount: string; usageUnit: string };
 type Expense = { date: string; amount: string; category: string };
 
+type Turns = {
+  month: string;
+  turnsPerDay: number | null;
+  band: "low" | "building" | "healthy" | "at-capacity" | null;
+  thresholds: { weak: number; healthy: number; atCapacity: number };
+  inputs: {
+    washerRevenue: number;
+    totalRevenue: number;
+    unattributedRevenue: number;
+    washerCount: number;
+    days: number;
+    daysInMonth: number;
+    partialMonth: boolean;
+    assumedVend: number | null;
+    pricedWashers: number;
+    estimatedTurns: number | null;
+  };
+  unavailableReason: string | null;
+};
+
+const BAND_COPY: Record<string, { label: string; tone: string }> = {
+  low: { label: "Below a busy store", tone: "text-amber-600" },
+  building: { label: "Building", tone: "text-amber-600" },
+  healthy: { label: "Healthy", tone: "text-green-600" },
+  "at-capacity": { label: "At capacity — consider adding machines", tone: "text-blue-600" },
+};
+
 export default function ReportsPage() {
   const [revenue, setRevenue] = useState<RevenueEntry[]>([]);
   const [utilities, setUtilities] = useState<UtilityBill[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [months, setMonths] = useState(6);
+  const [turns, setTurns] = useState<Turns | null>(null);
+
+  useEffect(() => {
+    fetch("/api/kpis/turns")
+      .then((r) => r.json())
+      .then(setTurns)
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -96,6 +131,108 @@ export default function ReportsPage() {
       ]} />
 
       <div className="p-6 space-y-6">
+        {/* Turns per day — the productivity number, shown with its workings so
+            nobody mistakes an estimate for a meter reading. */}
+        {turns && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-blue-600" />
+                Turns Per Day
+                <span className="ml-1 text-xs font-normal text-gray-400">
+                  {turns.month} · estimated
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {turns.turnsPerDay === null ? (
+                <p className="text-sm text-gray-500">{turns.unavailableReason}</p>
+              ) : (
+                <div className="grid gap-6 lg:grid-cols-3">
+                  <div>
+                    <p className="text-4xl font-bold tabular-nums">
+                      {turns.turnsPerDay.toFixed(2)}
+                    </p>
+                    <p className={`mt-1 text-sm font-medium ${BAND_COPY[turns.band ?? "low"].tone}`}>
+                      {BAND_COPY[turns.band ?? "low"].label}
+                    </p>
+
+                    {/* Where this sits between "quiet" and "full". */}
+                    <div className="mt-3 h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-blue-500"
+                        style={{
+                          width: `${Math.min(100, (turns.turnsPerDay / turns.thresholds.atCapacity) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="mt-1 flex justify-between text-xs text-gray-400">
+                      <span>0</span>
+                      <span>{turns.thresholds.healthy} healthy</span>
+                      <span>{turns.thresholds.atCapacity}+ full</span>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                      How this was worked out
+                    </p>
+                    <dl className="space-y-1 text-sm">
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-gray-500">Washer revenue</dt>
+                        <dd className="tabular-nums">{formatCurrency(turns.inputs.washerRevenue)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-gray-500">÷ assumed vend</dt>
+                        <dd className="tabular-nums">
+                          {turns.inputs.assumedVend ? formatCurrency(turns.inputs.assumedVend) : "—"}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-gray-500">= estimated washes</dt>
+                        <dd className="tabular-nums">
+                          {turns.inputs.estimatedTurns?.toFixed(0) ?? "—"}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-4 border-t pt-1">
+                        <dt className="text-gray-500">
+                          ÷ {turns.inputs.washerCount} washers × {turns.inputs.days} day
+                          {turns.inputs.days === 1 ? "" : "s"}
+                          {turns.inputs.partialMonth && " so far"}
+                        </dt>
+                        <dd className="tabular-nums font-semibold">
+                          {turns.turnsPerDay.toFixed(2)}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    {turns.inputs.unattributedRevenue > 0 && (
+                      <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
+                        {formatCurrency(turns.inputs.unattributedRevenue)} of this month&apos;s
+                        revenue is not marked as washers or dryers, so it is left out.
+                        Tag collections on the Revenue page to sharpen this.
+                      </p>
+                    )}
+                    {turns.inputs.pricedWashers < turns.inputs.washerCount && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        {turns.inputs.washerCount - turns.inputs.pricedWashers} of{" "}
+                        {turns.inputs.washerCount} washers have no configured price, so
+                        the assumed vend comes from the other{" "}
+                        {turns.inputs.pricedWashers}.
+                      </p>
+                    )}
+                    <p className="mt-2 text-xs text-gray-400">
+                      Cycles are inferred from money until the card readers are
+                      installed; the vend price is the average cycle price across
+                      your washers.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-5">

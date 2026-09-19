@@ -36,6 +36,7 @@ export default function RevenuePage() {
     amount: "",
     source: "COIN",
     machineId: "",
+    machineType: "",
     notes: "",
     collectedBy: "",
   });
@@ -70,7 +71,7 @@ export default function RevenuePage() {
       const entry = await res.json();
       setEntries((prev) => [entry, ...prev]);
       setOpen(false);
-      setForm({ date: format(new Date(), "yyyy-MM-dd"), amount: "", source: "COIN", machineId: "", notes: "", collectedBy: "" });
+      setForm({ date: format(new Date(), "yyyy-MM-dd"), amount: "", source: "COIN", machineId: "", machineType: "", notes: "", collectedBy: "" });
     }
   }
 
@@ -118,19 +119,31 @@ export default function RevenuePage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Machine (optional)</Label>
+                <Label>Collected From</Label>
                 <Select
-                  value={form.machineId || "__none__"}
-                  onValueChange={(v) => setForm((f) => ({ ...f, machineId: v === "__none__" ? "" : v }))}
+                  value={form.machineId || (form.machineType ? `type:${form.machineType}` : "__none__")}
+                  onValueChange={(v) =>
+                    setForm((f) => ({
+                      ...f,
+                      machineId: v.startsWith("type:") || v === "__none__" ? "" : v,
+                      machineType: v.startsWith("type:") ? v.slice(5) : "",
+                    }))
+                  }
                 >
-                  <SelectTrigger><SelectValue placeholder="All machines / total" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Not specified" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">All machines / total</SelectItem>
+                    <SelectItem value="type:WASHER">All washers</SelectItem>
+                    <SelectItem value="type:DRYER">All dryers</SelectItem>
+                    <SelectItem value="__none__">Not specified</SelectItem>
                     {machines.map((m) => (
                       <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-gray-400">
+                  Counting a coin pull? Log washers and dryers separately — turns
+                  per day can only count what it can tell apart.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>Collected By</Label>

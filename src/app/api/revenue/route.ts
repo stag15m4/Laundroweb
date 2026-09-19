@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       amount: body.amount,
       source: body.source,
       machineId: body.machineId || null,
+      machineType: body.machineType || null,
       notes: body.notes || null,
       collectedBy: body.collectedBy || null,
     },

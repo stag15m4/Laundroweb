@@ -17,7 +17,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       category: body.category,
       price: Number(body.price),
       costPerUnit: body.costPerUnit ? Number(body.costPerUnit) : null,
-      minimumStock: body.minimumStock,
+      // Same string-from-a-form hazard as the create route.
+      minimumStock:
+        body.minimumStock === undefined
+          ? undefined
+          : Number.parseInt(String(body.minimumStock), 10) || 0,
       active: body.active,
     },
   });

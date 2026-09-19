@@ -11,8 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, Zap, Droplets, Flame, Trash2 } from "lucide-react";
-import { format } from "date-fns";
+import { Plus, Zap, Droplets, Flame, Trash2, Pencil } from "lucide-react";
+import { format, addMonths } from "date-fns";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 type UtilityBill = {
@@ -56,10 +56,90 @@ const emptyForm = {
   provider: "", accountNumber: "", notes: "",
 };
 
+/**
+ * Prisma returns timestamps, but <input type="date"> wants a bare yyyy-MM-dd.
+ * Slicing the ISO string keeps the calendar date the bill was saved with;
+ * constructing a Date from the full timestamp and re-formatting it would shift
+ * the day for anyone west of UTC.
+ */
+function toDateInput(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : "";
+}
+
+/** Same calendar date, n months later. Noon sidesteps DST edges. */
+function shiftMonths(dateInput: string, months: number): string {
+  if (!dateInput) return "";
+  return format(addMonths(new Date(`${dateInput}T12:00:00`), months), "yyyy-MM-dd");
+}
+
+/**
+ * Builds the form for a new bill of `type` by carrying forward the last one.
+ *
+ * Provider, account number and usage unit do not change between bills, and the
+ * billing period advances exactly one month, so all of that is filled in from
+ * the previous bill. What genuinely differs every month — usage and cost — is
+ * left blank. The last bill is the source of truth rather than a separate
+ * settings record, so correcting a bill also corrects what the next one
+ * inherits.
+ */
+function carryForward(type: string, bills: UtilityBill[]) {
+  const previous = bills
+    .filter((b) => b.type === type)
+    .sort(
+      (a, b) =>
+        new Date(b.billingPeriodEnd).getTime() - new Date(a.billingPeriodEnd).getTime()
+    )[0];
+
+  if (!previous) {
+    return { ...emptyForm, type, usageUnit: utilityUnits[type]?.[0] ?? "kWh" };
+  }
+
+  return {
+    ...emptyForm,
+    type,
+    provider: previous.provider ?? "",
+    accountNumber: previous.accountNumber ?? "",
+    usageUnit: previous.usageUnit,
+    billingPeriodStart: shiftMonths(toDateInput(previous.billingPeriodStart), 1),
+    billingPeriodEnd: shiftMonths(toDateInput(previous.billingPeriodEnd), 1),
+    dueDate: shiftMonths(toDateInput(previous.dueDate), 1),
+  };
+}
+
 export default function UtilitiesPage() {
   const [bills, setBills] = useState<UtilityBill[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState<UtilityBill | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // True when the open Add dialog inherited details from a previous bill, so
+  // the form can say where those values came from.
+  const carriedFrom =
+    !editing && form.provider ? bills.find((b) => b.type === form.type) ?? null : null;
+
+  function openAdd() {
+    setEditing(null);
+    setForm(carryForward(emptyForm.type, bills));
+    setOpen(true);
+  }
+
+  function openEdit(bill: UtilityBill) {
+    setEditing(bill);
+    setForm({
+      type: bill.type,
+      billingPeriodStart: toDateInput(bill.billingPeriodStart),
+      billingPeriodEnd: toDateInput(bill.billingPeriodEnd),
+      dueDate: toDateInput(bill.dueDate),
+      usageAmount: String(bill.usageAmount),
+      usageUnit: bill.usageUnit,
+      cost: String(bill.cost),
+      provider: bill.provider ?? "",
+      accountNumber: bill.accountNumber ?? "",
+      notes: bill.notes ?? "",
+    });
+    setOpen(true);
+  }
 
   useEffect(() => {
     fetch("/api/utilities").then((r) => r.json()).then(setBills);
@@ -74,29 +154,47 @@ export default function UtilitiesPage() {
   );
 
   const chartData = (() => {
+    // Keyed by yyyy-MM so months sort chronologically. Bills arrive
+    // newest-first, so grouping in arrival order previously drew the chart
+    // backwards, and slicing the tail of that order kept the twelve OLDEST
+    // months instead of the most recent twelve.
     const byMonth: Record<string, Record<string, number>> = {};
     for (const b of bills) {
-      const month = format(new Date(b.billingPeriodEnd), "MMM yy");
-      if (!byMonth[month]) byMonth[month] = {};
-      byMonth[month][b.type] = (byMonth[month][b.type] ?? 0) + Number(b.cost);
+      const key = b.billingPeriodEnd.slice(0, 7);
+      if (!byMonth[key]) byMonth[key] = {};
+      byMonth[key][b.type] = (byMonth[key][b.type] ?? 0) + Number(b.cost);
     }
-    return Object.entries(byMonth)
+    return Object.keys(byMonth)
+      .sort()
       .slice(-12)
-      .map(([month, data]) => ({ month, ...data }));
+      .map((key) => ({
+        month: format(new Date(`${key}-01T12:00:00`), "MMM yy"),
+        ...byMonth[key],
+      }));
   })();
 
-  async function handleAdd(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const res = await fetch("/api/utilities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (res.ok) {
+    setSaving(true);
+    try {
+      const res = await fetch(
+        editing ? `/api/utilities/${editing.id}` : "/api/utilities",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        }
+      );
+      if (!res.ok) return;
       const bill = await res.json();
-      setBills((prev) => [bill, ...prev]);
+      setBills((prev) =>
+        editing ? prev.map((b) => (b.id === bill.id ? bill : b)) : [bill, ...prev]
+      );
       setOpen(false);
+      setEditing(null);
       setForm(emptyForm);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -109,7 +207,7 @@ export default function UtilitiesPage() {
   return (
     <div>
       <Header title="Utilities" description="Electric, water, gas, and sewer bills with usage tracking">
-        <Button onClick={() => setOpen(true)}>
+        <Button onClick={openAdd}>
           <Plus className="h-4 w-4 mr-2" />
           Add Bill
         </Button>
@@ -125,14 +223,27 @@ export default function UtilitiesPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Add Utility Bill</DialogTitle>
+            <DialogTitle>{editing ? "Edit Utility Bill" : "Add Utility Bill"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleAdd} className="grid grid-cols-2 gap-4">
+          {carriedFrom && (
+            <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
+              Provider, account number and billing period carried over from your
+              last {form.type.toLowerCase()} bill and advanced one month. Just
+              fill in usage and cost — change anything that is different.
+            </p>
+          )}
+          <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Utility Type</Label>
               <Select
                 value={form.type}
-                onValueChange={(v) => setForm((f) => ({ ...f, type: v, usageUnit: utilityUnits[v][0] }))}
+                onValueChange={(v) =>
+                  setForm((f) =>
+                    editing
+                      ? { ...f, type: v, usageUnit: utilityUnits[v]?.[0] ?? f.usageUnit }
+                      : { ...carryForward(v, bills), notes: f.notes }
+                  )
+                }
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -187,7 +298,9 @@ export default function UtilitiesPage() {
               <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
             </div>
             <div className="col-span-2">
-              <Button type="submit" className="w-full">Save Bill</Button>
+              <Button type="submit" className="w-full" disabled={saving}>
+                {saving ? "Saving…" : editing ? "Save Changes" : "Save Bill"}
+              </Button>
             </div>
           </form>
         </DialogContent>
@@ -276,9 +389,14 @@ export default function UtilitiesPage() {
                         <td className="px-6 py-3 text-gray-500">{b.dueDate ? formatDate(b.dueDate) : "—"}</td>
                         <td className="px-6 py-3 text-gray-500">{b.provider ?? "—"}</td>
                         <td className="px-6 py-3">
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(b.id)}>
-                            <Trash2 className="h-4 w-4 text-red-400" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => openEdit(b)} title="Edit bill">
+                              <Pencil className="h-4 w-4 text-gray-400" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(b.id)} title="Delete bill">
+                              <Trash2 className="h-4 w-4 text-red-400" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );

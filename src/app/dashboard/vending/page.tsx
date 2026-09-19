@@ -387,6 +387,8 @@ export default function VendingPage() {
   const [restockOpen, setRestockOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [form, setForm] = useState(emptyProduct);
+  const [formError, setFormError] = useState("");
+  const [savingProduct, setSavingProduct] = useState(false);
   const [txForm, setTxForm] = useState({ productId: "", quantity: "1", cost: "", supplier: "", date: format(new Date(), "yyyy-MM-dd") });
 
   useEffect(() => {
@@ -404,17 +406,32 @@ export default function VendingPage() {
 
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
+    setFormError("");
+    setSavingProduct(true);
+
+    // The stock fields are text inputs, so they leave here as strings. Sending
+    // them as numbers keeps a string from ever reaching an Int column.
     const res = await fetch("/api/vending", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        ...form,
+        currentStock: Number(form.currentStock) || 0,
+        minimumStock: Number(form.minimumStock) || 0,
+      }),
     });
-    if (res.ok) {
-      const p = await res.json();
-      setProducts((prev) => [...prev, { ...p, _count: { sales: 0, restocks: 0 } }]);
-      setAddOpen(false);
-      setForm(emptyProduct);
+    setSavingProduct(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setFormError(data.error ?? "Could not save this product. Please try again.");
+      return;
     }
+
+    const p = await res.json();
+    setProducts((prev) => [...prev, { ...p, _count: { sales: 0, restocks: 0 } }]);
+    setAddOpen(false);
+    setForm(emptyProduct);
   }
 
   async function handleSale(e: React.FormEvent) {
@@ -619,7 +636,13 @@ export default function VendingPage() {
       )}
 
       {/* ── Dialogs ── */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog
+        open={addOpen}
+        onOpenChange={(v) => {
+          setAddOpen(v);
+          if (!v) setFormError("");
+        }}
+      >
         <DialogContent>
           <DialogHeader><DialogTitle>Add Vending Product</DialogTitle></DialogHeader>
           <form onSubmit={handleAddProduct} className="space-y-4">
@@ -652,7 +675,12 @@ export default function VendingPage() {
                 <Input type="number" value={form.minimumStock} onChange={(e) => setForm((f) => ({ ...f, minimumStock: e.target.value }))} />
               </div>
             </div>
-            <Button type="submit" className="w-full">Add Product</Button>
+            {formError && (
+              <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>
+            )}
+            <Button type="submit" className="w-full" disabled={savingProduct}>
+              {savingProduct ? "Saving…" : "Add Product"}
+            </Button>
           </form>
         </DialogContent>
       </Dialog>

@@ -373,3 +373,28 @@ model Setting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+/// A validated but unwritten change, held between an Alfred propose call and
+/// its confirmation. Stored in the database rather than in memory because
+/// Railway restarts the container on deploy, and a restart mid-flow would
+/// silently invalidate a token a human was about to approve.
+///
+/// Rows are kept after use and after expiry so a confirm attempt can say
+/// precisely why it failed — already used, or expired — instead of reporting
+/// an unknown token.
+model AlfredProposal {
+  id         String    @id @default(cuid())
+  /// SHA-256 of the confirmation token. The raw token is returned once.
+  tokenHash  String    @unique
+  /// Which endpoint issued it. A token is only valid at the endpoint that
+  /// created it, so a maintenance approval cannot be replayed as a status change.
+  resource   String
+  /// Resolved, validated values ready to write. Nothing is re-derived on confirm.
+  payload    Json
+  summary    String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([expiresAt])
+}

@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { verifyAlfredToken, alfredUnauthorized } from "@/lib/alfred-auth";
+import {
+  alfredError,
+  consumeProposal,
+  createProposal,
+  PROPOSAL_TTL_SECONDS,
+} from "@/lib/alfred-write";
+import { validateStatusChange, writeStatusChange, type StatusPayload } from "./write";
 import { prisma } from "@/lib/prisma";
 
 const WASHER_PRICE_FIELDS = [
@@ -69,4 +77,57 @@ export async function GET(req: NextRequest) {
       })),
     }))
   );
+}
+
+
+// ── Write: propose, then confirm ───────────────────────────────────────────
+
+/** Ties a confirmation token to this endpoint. */
+const RESOURCE = "machine-status";
+
+/**
+ * One endpoint, two steps. A body without `confirmationToken` validates and
+ * returns a token plus a summary, writing nothing; a body carrying only the
+ * token applies that change.
+ */
+export async function POST(req: NextRequest) {
+  if (!verifyAlfredToken(req)) return alfredUnauthorized();
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return alfredError(400, "invalid_json", "The request body could not be parsed as JSON.");
+  }
+
+  if (body.confirmationToken !== undefined) {
+    const claim = await consumeProposal(RESOURCE, body.confirmationToken);
+    if (!claim.ok) return claim.response;
+
+    const machine = await writeStatusChange(claim.payload as StatusPayload);
+    return NextResponse.json({
+      status: "confirmed",
+      summary: claim.summary,
+      machineId: machine.id,
+      record: machine,
+    });
+  }
+
+  const validated = await validateStatusChange(body);
+  if (!validated.ok) return validated.response;
+
+  const { confirmationToken, expiresAt } = await createProposal(
+    RESOURCE,
+    validated.payload as unknown as Prisma.InputJsonValue,
+    validated.summary
+  );
+
+  return NextResponse.json({
+    status: "proposed",
+    summary: validated.summary,
+    confirmationToken,
+    expiresAt: expiresAt.toISOString(),
+    expiresInSeconds: PROPOSAL_TTL_SECONDS,
+    details: validated.payload,
+  });
 }

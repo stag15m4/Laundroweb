@@ -8,7 +8,9 @@
     "start": "next start",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/ci-smoke-test.mjs"
   },
   "dependencies": {
     "next": "^15.1.0",

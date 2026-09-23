@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buildServiceHistoryPdf, type HistoryResponse } from "@/lib/service-history-pdf";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, CheckCircle2, Clock, AlertTriangle, Wrench, X, Copy } from "lucide-react";
+import { Plus, CheckCircle2, Clock, AlertTriangle, Wrench, X, Copy, FileDown } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -268,6 +269,50 @@ export default function MaintenancePage() {
     if (res.ok) setSchedules((prev) => prev.filter((s) => s.id !== id));
   }
 
+  // ── Service history export ─────────────────────────────────────────────
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyScope, setHistoryScope] = useState("all");
+  const [historyMachineId, setHistoryMachineId] = useState("");
+  const [historyFrom, setHistoryFrom] = useState(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [historyTo, setHistoryTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+
+  async function exportHistory() {
+    setHistoryError("");
+    if (historyScope === "machine" && !historyMachineId) {
+      setHistoryError("Pick a machine, or change the scope.");
+      return;
+    }
+    setHistoryBusy(true);
+    try {
+      const params = new URLSearchParams({ from: historyFrom, to: historyTo, scope: historyScope });
+      if (historyScope === "machine") params.set("machineId", historyMachineId);
+
+      const res = await fetch(`/api/maintenance/history?${params}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setHistoryError(data.error ?? "Could not build the report.");
+        return;
+      }
+
+      const data: HistoryResponse = await res.json();
+      if (data.totals.logCount === 0) {
+        setHistoryError("No service records fall in that date range.");
+        return;
+      }
+
+      await buildServiceHistoryPdf(data);
+      setHistoryOpen(false);
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
   const overdue = schedules.filter((s) => daysUntil(s.nextDueAt) !== null && daysUntil(s.nextDueAt)! < 0);
   const dueSoon = schedules.filter((s) => { const d = daysUntil(s.nextDueAt); return d !== null && d >= 0 && d <= 14; });
   const upcoming = schedules.filter((s) => { const d = daysUntil(s.nextDueAt); return d === null || d > 14; });
@@ -287,6 +332,10 @@ export default function MaintenancePage() {
   return (
     <div>
       <Header title="Maintenance Schedule" description="Recurring preventive maintenance tasks">
+        <Button variant="outline" onClick={() => setHistoryOpen(true)}>
+          <FileDown className="h-4 w-4 mr-2" />
+          Service History
+        </Button>
         {isOwner && (
           <Button onClick={() => { setForm(emptyForm); setDialogTitle("Add Maintenance Task"); setAddOpen(true); }}>
             <Plus className="h-4 w-4 mr-2" />
@@ -294,6 +343,67 @@ export default function MaintenancePage() {
           </Button>
         )}
       </Header>
+
+      {/* Service history export */}
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export Service History</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">
+              A dated record of work done, grouped by machine, with costs per
+              machine and a total. Building and facility work is included as its
+              own section.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>From</Label>
+                <Input type="date" value={historyFrom} onChange={(e) => setHistoryFrom(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>To</Label>
+                <Input type="date" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Include</Label>
+              <Select value={historyScope} onValueChange={(v) => { setHistoryScope(v); setHistoryError(""); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Everything — all machines and the building</SelectItem>
+                  <SelectItem value="machine">One machine</SelectItem>
+                  <SelectItem value="building">Building / facility only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {historyScope === "machine" && (
+              <div className="space-y-1.5">
+                <Label>Machine</Label>
+                <Select value={historyMachineId} onValueChange={(v) => { setHistoryMachineId(v); setHistoryError(""); }}>
+                  <SelectTrigger><SelectValue placeholder="Choose a machine…" /></SelectTrigger>
+                  <SelectContent>
+                    {machines.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {historyError && (
+              <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{historyError}</p>
+            )}
+
+            <Button className="w-full" onClick={exportHistory} disabled={historyBusy}>
+              {historyBusy ? "Building…" : "Download PDF"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <PageTabs tabs={[
         { label: "Machines", href: "/dashboard/equipment" },

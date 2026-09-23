@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { buildServiceHistoryPdf, type HistoryResponse } from "@/lib/service-history-pdf";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -436,6 +437,7 @@ function MachineDetailModal({
   // A status that needs an explanation before it is saved.
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [statusError, setStatusError] = useState("");
+  const [printingHistory, setPrintingHistory] = useState(false);
 
   const machineKey = machine === null ? "building" : machine?.id;
 
@@ -660,6 +662,30 @@ function MachineDetailModal({
     void commitStatus(next, "");
   }
 
+  /**
+   * Prints this machine's complete service record — every entry, not a window.
+   * This is the copy that goes to a warranty desk or a buyer, where "here is
+   * everything that was ever done to it" is the whole point.
+   */
+  async function printHistory() {
+    if (!machine) return;
+    setPrintingHistory(true);
+    try {
+      const res = await fetch(
+        `/api/maintenance/history?scope=machine&machineId=${machine.id}&allTime=1`
+      );
+      if (!res.ok) return;
+      const data: HistoryResponse = await res.json();
+      if (data.totals.logCount === 0) {
+        setStatusError(`No service has been logged for ${machine.name} yet.`);
+        return;
+      }
+      await buildServiceHistoryPdf(data);
+    } finally {
+      setPrintingHistory(false);
+    }
+  }
+
   async function commitStatus(next: string, note: string) {
     if (!machine) return;
     setStatusSaving(true);
@@ -820,6 +846,18 @@ function MachineDetailModal({
                     <Button size="sm" variant="outline" onClick={() => setNoteOpen((v) => !v)}>
                       <StickyNote className="h-3.5 w-3.5 mr-1.5" />
                       Add Note
+                    </Button>
+                  )}
+                  {machine && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={printHistory}
+                      disabled={printingHistory}
+                      title={`Print the complete service record for ${machine.name}`}
+                    >
+                      <FileDown className="h-3.5 w-3.5 mr-1.5" />
+                      {printingHistory ? "Building…" : "Print History"}
                     </Button>
                   )}
                   {manual && (

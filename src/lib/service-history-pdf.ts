@@ -1,0 +1,195 @@
+import { formatCurrency } from "@/lib/utils";
+
+/**
+ * Builds the printable service history.
+ *
+ * Laid out as a record somebody else will read — a buyer valuing the fleet, a
+ * warranty desk, an accountant — so it leads with the totals, then gives each
+ * machine its own block in date order, and ends with the machines that had no
+ * work at all. A machine with no entries is information, not an omission.
+ */
+
+export type HistoryLog = {
+  date: string;
+  type: string;
+  description: string;
+  cost: number | null;
+  technician: string | null;
+  vendor: string | null;
+  status: string;
+  parts: { name: string; quantityUsed: number; unit: string }[];
+};
+
+export type HistoryGroup = {
+  machineId: string | null;
+  machineName: string;
+  machine: { brand: string | null; model: string | null; serialNumber: string | null; status: string } | null;
+  totalCost: number;
+  logs: HistoryLog[];
+};
+
+export type HistoryResponse = {
+  range: { from: string | null; to: string | null; allTime?: boolean };
+  scope: string;
+  groups: HistoryGroup[];
+  machinesWithNoWork: { id: string; name: string; type: string; status: string }[];
+  totals: {
+    maintenanceCost: number;
+    logCount: number;
+  };
+};
+
+const day = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+
+export async function buildServiceHistoryPdf(data: HistoryResponse, storeName = "Clinton Laundry Works") {
+  const { jsPDF } = await import("jspdf");
+  const autoTable = (await import("jspdf-autotable")).default;
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
+
+  const width = doc.internal.pageSize.getWidth();
+  const rangeLabel =
+    data.range.allTime || !data.range.from || !data.range.to
+      ? "Complete record"
+      : `${day(data.range.from)} – ${day(data.range.to)}`;
+
+  // ── Header ───────────────────────────────────────────────────────────────
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("Service History", 14, 18);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(storeName, 14, 25);
+  doc.text(rangeLabel, 14, 31);
+  doc.text(
+    `${data.totals.logCount} record${data.totals.logCount === 1 ? "" : "s"} · ` +
+      `${formatCurrency(data.totals.maintenanceCost)} total`,
+    14,
+    37
+  );
+  doc.setTextColor(0);
+
+  // ── Cost summary, most expensive first ──────────────────────────────────
+  const ranked = [...data.groups].sort((a, b) => b.totalCost - a.totalCost);
+
+  autoTable(doc, {
+    startY: 44,
+    head: [["Machine", "Records", "Maintenance cost", "Share of spend"]],
+    body: ranked.map((g) => [
+      g.machineName,
+      String(g.logs.length),
+      formatCurrency(g.totalCost),
+      data.totals.maintenanceCost > 0
+        ? `${((g.totalCost / data.totals.maintenanceCost) * 100).toFixed(1)}%`
+        : "—",
+    ]),
+    foot: [["Total", String(data.totals.logCount), formatCurrency(data.totals.maintenanceCost), ""]],
+    styles: { fontSize: 8.5, cellPadding: 2.5 },
+    headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
+    footStyles: { fillColor: [241, 245, 249], textColor: 0, fontStyle: "bold" },
+    columnStyles: { 0: { fontStyle: "bold" } },
+  });
+
+  let y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+
+
+  // ── One block per machine ───────────────────────────────────────────────
+  const pageHeight = doc.internal.pageSize.getHeight();
+  // Height of a machine heading, its model line, a table header and one row.
+  // Starting a block with less room than this than leaves the machine name
+  // stranded at the foot of a page with its work on the next one.
+  const MIN_BLOCK_MM = 42;
+
+  for (const group of data.groups) {
+    if (y + MIN_BLOCK_MM > pageHeight - 14) {
+      doc.addPage();
+      y = 18;
+    }
+
+    const subtitle = group.machine
+      ? [group.machine.brand, group.machine.model, group.machine.serialNumber && `S/N ${group.machine.serialNumber}`]
+          .filter(Boolean)
+          .join(" · ")
+      : "Work not tied to a specific machine";
+
+    autoTable(doc, {
+      startY: y,
+      head: [[`${group.machineName} — ${formatCurrency(group.totalCost)}`, "", "", "", "", ""]],
+      body: [],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold", halign: "left" },
+      margin: { left: 14, right: 14 },
+    });
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text(subtitle, 14, y + 4);
+    doc.setTextColor(0);
+
+    autoTable(doc, {
+      startY: y + 7,
+      head: [["Date", "Type", "Description", "Parts used", "Cost", "By", "Status"]],
+      body: group.logs.map((log) => [
+        day(log.date),
+        log.type,
+        log.description,
+        log.parts.length
+          ? log.parts.map((p) => `${p.quantityUsed} ${p.unit} ${p.name}`).join(", ")
+          : "—",
+        log.cost === null ? "—" : formatCurrency(log.cost),
+        [log.technician, log.vendor].filter(Boolean).join(" / ") || "—",
+        log.status.replace(/_/g, " "),
+      ]),
+      styles: { fontSize: 7.5, cellPadding: 2, overflow: "linebreak" },
+      headStyles: { fillColor: [226, 232, 240], textColor: 30, fontStyle: "bold", fontSize: 7.5 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { cellWidth: 24 },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 78 },
+        3: { cellWidth: 50 },
+        4: { cellWidth: 20, halign: "right" },
+        6: { cellWidth: 24 },
+      },
+      margin: { left: 14, right: 14 },
+    });
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  }
+
+  // ── Machines with no recorded work ──────────────────────────────────────
+  if (data.machinesWithNoWork.length > 0) {
+    autoTable(doc, {
+      startY: y,
+      head: [["No recorded work in this period", "Type", "Status"]],
+      body: data.machinesWithNoWork.map((m) => [m.name, m.type.replace(/_/g, " "), m.status.replace(/_/g, " ")]),
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: "bold" },
+      margin: { left: 14, right: 14 },
+    });
+  }
+
+  // ── Footer ──────────────────────────────────────────────────────────────
+  const pages = doc.getNumberOfPages();
+  const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    const h = doc.internal.pageSize.getHeight();
+    doc.text(`${storeName} · Service history ${rangeLabel} · generated ${generated}`, 14, h - 8);
+    doc.text(`Page ${i} of ${pages}`, width - 14, h - 8, { align: "right" });
+  }
+
+  // Name the file after what it contains, so a folder of these stays legible.
+  const subject =
+    data.groups.length === 1 && data.groups[0]
+      ? data.groups[0].machineName.replace(/[^\w-]+/g, "-").toLowerCase()
+      : "all";
+  const span =
+    data.range.from && data.range.to
+      ? `${data.range.from.slice(0, 10)}-to-${data.range.to.slice(0, 10)}`
+      : "complete";
+  doc.save(`service-history-${subject}-${span}.pdf`);
+}

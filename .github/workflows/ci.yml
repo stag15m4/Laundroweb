@@ -1,0 +1,93 @@
+name: CI
+
+# Runs on every PR into the deploy branch, and on direct pushes to it as a
+# backstop. A green run here is the bar a change has to clear before it is
+# merged — see scripts/ci-smoke-test.mjs for why the smoke-test step exists
+# and what class of bug it specifically guards against.
+on:
+  pull_request:
+    branches: [claude/laundromat-management-tool-6Wnsx]
+  push:
+    branches: [claude/laundromat-management-tool-6Wnsx]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: laundroweb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # A throwaway database that lives only for this run — never production
+      # data. Every value below is CI-only and is not used anywhere real.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/laundroweb
+      NEXTAUTH_SECRET: ci-secret-not-used-outside-this-run
+      NEXTAUTH_URL: http://localhost:3000
+      ALFRED_SERVICE_TOKEN: ci-token-not-used-outside-this-run
+      SEED_OWNER_PASSWORD: Ci-Owner-4f8a2c9b
+      SEED_STAFF_PASSWORD: Ci-Staff-7d1e6a3f
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Fails fast on a compile error before spending time on the database
+      # and server steps below.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Apply schema to the CI database
+        run: npx prisma db push --accept-data-loss --skip-generate
+
+      - name: Seed known accounts for the smoke test
+        run: npx tsx prisma/seed.ts
+
+      - name: Start the app
+        run: npm start &
+
+      - name: Wait for the app to answer
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/login > /dev/null; then
+              echo "Server is up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not come up in time." >&2
+          exit 1
+
+      # See scripts/ci-smoke-test.mjs: this is the check that would have
+      # caught the login outage that typecheck and build both missed.
+      - name: Auth smoke test
+        run: node scripts/ci-smoke-test.mjs

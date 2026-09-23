@@ -29,7 +29,7 @@ export type HistoryGroup = {
 };
 
 export type HistoryResponse = {
-  range: { from: string; to: string };
+  range: { from: string | null; to: string | null; allTime?: boolean };
   scope: string;
   groups: HistoryGroup[];
   machinesWithNoWork: { id: string; name: string; type: string; status: string }[];
@@ -48,7 +48,10 @@ export async function buildServiceHistoryPdf(data: HistoryResponse, storeName = 
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
 
   const width = doc.internal.pageSize.getWidth();
-  const rangeLabel = `${day(data.range.from)} – ${day(data.range.to)}`;
+  const rangeLabel =
+    data.range.allTime || !data.range.from || !data.range.to
+      ? "Complete record"
+      : `${day(data.range.from)} – ${day(data.range.to)}`;
 
   // ── Header ───────────────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
@@ -179,6 +182,14 @@ export async function buildServiceHistoryPdf(data: HistoryResponse, storeName = 
     doc.text(`Page ${i} of ${pages}`, width - 14, h - 8, { align: "right" });
   }
 
-  const stamp = (iso: string) => iso.slice(0, 10);
-  doc.save(`service-history-${stamp(data.range.from)}-to-${stamp(data.range.to)}.pdf`);
+  // Name the file after what it contains, so a folder of these stays legible.
+  const subject =
+    data.groups.length === 1 && data.groups[0]
+      ? data.groups[0].machineName.replace(/[^\w-]+/g, "-").toLowerCase()
+      : "all";
+  const span =
+    data.range.from && data.range.to
+      ? `${data.range.from.slice(0, 10)}-to-${data.range.to.slice(0, 10)}`
+      : "complete";
+  doc.save(`service-history-${subject}-${span}.pdf`);
 }

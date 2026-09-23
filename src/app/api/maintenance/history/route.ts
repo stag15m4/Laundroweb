@@ -29,13 +29,17 @@ export async function GET(req: NextRequest) {
 
   const params = req.nextUrl.searchParams;
 
+  // Printing one machine's complete record — for a warranty claim or a sale —
+  // wants every entry, not a window.
+  const allTime = params.get("allTime") === "1";
+
   // Default to the last twelve months, which is the span most people want.
   const now = new Date();
   const defaultFrom = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()));
   const from = parseDay(params.get("from"), defaultFrom);
   const to = parseDay(params.get("to"), now, true);
 
-  if (from > to) {
+  if (!allTime && from > to) {
     return NextResponse.json(
       { error: "The start date is after the end date." },
       { status: 400 }
@@ -45,7 +49,7 @@ export async function GET(req: NextRequest) {
   const scope = params.get("scope") ?? "all";
   const machineId = params.get("machineId");
 
-  const where: Prisma.MaintenanceLogWhereInput = { date: { gte: from, lte: to } };
+  const where: Prisma.MaintenanceLogWhereInput = allTime ? {} : { date: { gte: from, lte: to } };
   if (scope === "building") where.machineId = null;
   else if (scope === "machine" && machineId) where.machineId = machineId;
 
@@ -110,7 +114,9 @@ export async function GET(req: NextRequest) {
   const grandTotal = ordered.reduce((sum, g) => sum + g.totalCost, 0);
 
   return NextResponse.json({
-    range: { from: from.toISOString(), to: to.toISOString() },
+    range: allTime
+      ? { from: null, to: null, allTime: true }
+      : { from: from.toISOString(), to: to.toISOString(), allTime: false },
     scope,
     groups: ordered.map((g) => ({
       machineId: g.machineId,

@@ -11,11 +11,9 @@ import { prisma } from "@/lib/prisma";
  * machineId — there is no separate building log — so it comes back as its own
  * group rather than a separate feed.
  *
- * Maintenance cost per machine is exact. Revenue per machine is not: a coin
- * collection covering the whole floor carries no machine, so it cannot be
- * attributed to one. The response reports how much revenue in the range could
- * be attributed and how much could not, so the page can say plainly when a
- * cost-versus-revenue comparison is not yet possible.
+ * Deliberately maintenance only. Revenue lives on the Revenue and Reports
+ * pages; mixing it in here would put a number this section cannot measure
+ * properly next to ones it can.
  */
 
 function parseDay(value: string | null, fallback: Date, endOfDay = false): Date {
@@ -51,7 +49,7 @@ export async function GET(req: NextRequest) {
   if (scope === "building") where.machineId = null;
   else if (scope === "machine" && machineId) where.machineId = machineId;
 
-  const [logs, machines, revenueByMachine, revenueTotal] = await Promise.all([
+  const [logs, machines] = await Promise.all([
     prisma.maintenanceLog.findMany({
       where,
       orderBy: { date: "asc" },
@@ -65,23 +63,8 @@ export async function GET(req: NextRequest) {
       select: { id: true, name: true, type: true, brand: true, model: true, serialNumber: true, status: true },
       orderBy: { name: "asc" },
     }),
-    prisma.revenueEntry.groupBy({
-      by: ["machineId"],
-      where: { date: { gte: from, lte: to }, machineId: { not: null } },
-      _sum: { amount: true },
-    }),
-    prisma.revenueEntry.aggregate({
-      where: { date: { gte: from, lte: to } },
-      _sum: { amount: true },
-    }),
   ]);
 
-  const revenueFor = new Map<string, number>();
-  for (const row of revenueByMachine) {
-    if (row.machineId) revenueFor.set(row.machineId, Number(row._sum.amount ?? 0));
-  }
-  const attributedRevenue = [...revenueFor.values()].reduce((a, b) => a + b, 0);
-  const totalRevenue = Number(revenueTotal._sum.amount ?? 0);
 
   // ── Group logs: one group per machine that has any, plus the building ────
   type Group = {
@@ -90,7 +73,6 @@ export async function GET(req: NextRequest) {
     machine: (typeof machines)[number] | null;
     logs: typeof logs;
     totalCost: number;
-    revenue: number | null;
   };
 
   const groups = new Map<string, Group>();
@@ -103,7 +85,6 @@ export async function GET(req: NextRequest) {
         machine: log.machine ?? null,
         logs: [],
         totalCost: 0,
-        revenue: log.machineId ? revenueFor.get(log.machineId) ?? 0 : null,
       });
     }
     const group = groups.get(key)!;
@@ -136,7 +117,6 @@ export async function GET(req: NextRequest) {
       machineName: g.machineName,
       machine: g.machine,
       totalCost: g.totalCost,
-      revenue: g.revenue,
       logs: g.logs.map((log) => ({
         id: log.id,
         date: log.date.toISOString(),
@@ -157,9 +137,6 @@ export async function GET(req: NextRequest) {
     totals: {
       maintenanceCost: grandTotal,
       logCount: logs.length,
-      totalRevenue,
-      attributedRevenue,
-      unattributedRevenue: totalRevenue - attributedRevenue,
     },
   });
 }

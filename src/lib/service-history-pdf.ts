@@ -25,7 +25,6 @@ export type HistoryGroup = {
   machineName: string;
   machine: { brand: string | null; model: string | null; serialNumber: string | null; status: string } | null;
   totalCost: number;
-  revenue: number | null;
   logs: HistoryLog[];
 };
 
@@ -37,9 +36,6 @@ export type HistoryResponse = {
   totals: {
     maintenanceCost: number;
     logCount: number;
-    totalRevenue: number;
-    attributedRevenue: number;
-    unattributedRevenue: number;
   };
 };
 
@@ -73,37 +69,19 @@ export async function buildServiceHistoryPdf(data: HistoryResponse, storeName = 
 
   // ── Cost summary, most expensive first ──────────────────────────────────
   const ranked = [...data.groups].sort((a, b) => b.totalCost - a.totalCost);
-  const canCompareRevenue = data.totals.attributedRevenue > 0;
 
   autoTable(doc, {
     startY: 44,
-    head: [
-      canCompareRevenue
-        ? ["Machine", "Records", "Maintenance cost", "Attributed revenue", "Net"]
-        : ["Machine", "Records", "Maintenance cost", "Share of spend"],
-    ],
-    body: ranked.map((g) => {
-      const share =
-        data.totals.maintenanceCost > 0
-          ? `${((g.totalCost / data.totals.maintenanceCost) * 100).toFixed(1)}%`
-          : "—";
-      if (!canCompareRevenue) {
-        return [g.machineName, String(g.logs.length), formatCurrency(g.totalCost), share];
-      }
-      const revenue = g.revenue;
-      return [
-        g.machineName,
-        String(g.logs.length),
-        formatCurrency(g.totalCost),
-        revenue === null ? "n/a" : revenue === 0 ? "none attributed" : formatCurrency(revenue),
-        revenue === null || revenue === 0 ? "—" : formatCurrency(revenue - g.totalCost),
-      ];
-    }),
-    foot: [
-      canCompareRevenue
-        ? ["Total", String(data.totals.logCount), formatCurrency(data.totals.maintenanceCost), formatCurrency(data.totals.attributedRevenue), ""]
-        : ["Total", String(data.totals.logCount), formatCurrency(data.totals.maintenanceCost), ""],
-    ],
+    head: [["Machine", "Records", "Maintenance cost", "Share of spend"]],
+    body: ranked.map((g) => [
+      g.machineName,
+      String(g.logs.length),
+      formatCurrency(g.totalCost),
+      data.totals.maintenanceCost > 0
+        ? `${((g.totalCost / data.totals.maintenanceCost) * 100).toFixed(1)}%`
+        : "—",
+    ]),
+    foot: [["Total", String(data.totals.logCount), formatCurrency(data.totals.maintenanceCost), ""]],
     styles: { fontSize: 8.5, cellPadding: 2.5 },
     headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
     footStyles: { fillColor: [241, 245, 249], textColor: 0, fontStyle: "bold" },
@@ -112,22 +90,20 @@ export async function buildServiceHistoryPdf(data: HistoryResponse, storeName = 
 
   let y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
 
-  if (data.totals.unattributedRevenue > 0) {
-    doc.setFontSize(8);
-    doc.setTextColor(120);
-    doc.text(
-      `${formatCurrency(data.totals.unattributedRevenue)} of revenue in this period is not tied to a single machine ` +
-        `(collections covering the whole floor), so it cannot be set against one machine's costs.`,
-      14,
-      y,
-      { maxWidth: width - 28 }
-    );
-    doc.setTextColor(0);
-    y += 8;
-  }
 
   // ── One block per machine ───────────────────────────────────────────────
+  const pageHeight = doc.internal.pageSize.getHeight();
+  // Height of a machine heading, its model line, a table header and one row.
+  // Starting a block with less room than this than leaves the machine name
+  // stranded at the foot of a page with its work on the next one.
+  const MIN_BLOCK_MM = 42;
+
   for (const group of data.groups) {
+    if (y + MIN_BLOCK_MM > pageHeight - 14) {
+      doc.addPage();
+      y = 18;
+    }
+
     const subtitle = group.machine
       ? [group.machine.brand, group.machine.model, group.machine.serialNumber && `S/N ${group.machine.serialNumber}`]
           .filter(Boolean)

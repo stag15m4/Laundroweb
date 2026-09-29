@@ -49,6 +49,7 @@ const staffNav: NavItem[] = [
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/climate", label: "Climate", icon: Thermometer },
+  { href: "/dashboard/cameras", label: "Cameras", icon: Camera },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

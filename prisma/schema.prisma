@@ -398,3 +398,19 @@ model AlfredProposal {
 
   @@index([expiresAt])
 }
+
+/// A link to a live camera view - typically a UniFi Protect "Share Livestream"
+/// link (Protect -> camera -> Settings -> Share Livestream), which is a public
+/// link Ubiquiti generates specifically to be handed to someone outside the
+/// Protect app, rather than the login-gated dashboard itself. The full
+/// Protect dashboard URL also works fine for "Open", it just requires the
+/// viewer to be signed into the Ubiquiti account that owns the console.
+model Camera {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  notes     String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

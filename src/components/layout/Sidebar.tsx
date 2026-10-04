@@ -62,7 +62,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   return (
     <aside className="flex h-full w-60 flex-col border-r border-gray-200 bg-gray-950 text-white">
       <div className="flex h-16 items-center gap-2.5 px-5 border-b border-gray-800 flex-shrink-0">
-        <Image src="/icons/icon-180.png" alt="" width={32} height={32} className="h-8 w-8 rounded-md flex-shrink-0" />
+        <Image src="/icons/apple-touch-icon.png" alt="" width={32} height={32} className="h-8 w-8 flex-shrink-0" />
         <span className="font-bold text-lg tracking-tight">Laundroweb</span>
       </div>
 

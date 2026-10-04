@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -12,7 +13,6 @@ import {
   Users,
   Camera,
   LogOut,
-  WashingMachine,
   ChevronRight,
   Settings,
   LayoutGrid,
@@ -61,8 +61,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   return (
     <aside className="flex h-full w-60 flex-col border-r border-gray-200 bg-gray-950 text-white">
-      <div className="flex h-16 items-center gap-2 px-5 border-b border-gray-800 flex-shrink-0">
-        <WashingMachine className="h-6 w-6 text-blue-400" />
+      <div className="flex h-16 items-center gap-2.5 px-5 border-b border-gray-800 flex-shrink-0">
+        <Image src="/icons/icon-180.png" alt="" width={32} height={32} className="h-8 w-8 rounded-md flex-shrink-0" />
         <span className="font-bold text-lg tracking-tight">Laundroweb</span>
       </div>
 

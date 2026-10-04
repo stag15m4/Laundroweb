@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { WashingMachine, Loader2, ArrowLeft, X, UserRound } from "lucide-react";
+import { Loader2, ArrowLeft, X, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -93,11 +94,16 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center gap-2 mb-2">
-            <WashingMachine className="h-8 w-8 text-blue-400" />
-            <span className="text-2xl font-bold text-white tracking-tight">Laundroweb</span>
-          </div>
-          <p className="text-gray-400 text-sm">
+          <Image
+            src="/logo-hero.png"
+            alt="Laundroweb"
+            width={450}
+            height={360}
+            priority
+            className="h-32 w-auto mb-2"
+          />
+          <span className="text-2xl font-bold text-white tracking-tight">Laundroweb</span>
+          <p className="text-gray-400 text-sm mt-1">
             {showPicker ? "Choose an account" : "Sign in to your dashboard"}
           </p>
         </div>

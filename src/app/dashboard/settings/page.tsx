@@ -515,10 +515,10 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-gray-500">
-                Requires FASCARD_USERNAME, FASCARD_PASSWORD, and
-                FASCARD_LOCATION_ID set as environment variables. Test the
-                login below, then use the explorer to see what a real
-                endpoint actually returns before we wire it into a KPI.
+                Requires FASCARD_USERNAME, FASCARD_PASSWORD,
+                FASCARD_LOCATION_ID, and FASCARD_ACCOUNT_ID set as
+                environment variables. Test the login below, then use the
+                explorer to see what a real endpoint actually returns.
               </p>
 
               <Button type="button" onClick={handleFcTest} disabled={fcTesting}>

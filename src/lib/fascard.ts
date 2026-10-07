@@ -7,11 +7,20 @@ const TOKEN_TTL_MS = 10 * 60 * 1000;
 let cachedToken: { value: string; expiry: number } | null = null;
 
 export function fascardConfigured(): boolean {
-  return !!(process.env.FASCARD_USERNAME && process.env.FASCARD_PASSWORD && process.env.FASCARD_LOCATION_ID);
+  return !!(
+    process.env.FASCARD_USERNAME &&
+    process.env.FASCARD_PASSWORD &&
+    process.env.FASCARD_LOCATION_ID &&
+    process.env.FASCARD_ACCOUNT_ID
+  );
 }
 
 export function fascardLocationId(): string {
   return process.env.FASCARD_LOCATION_ID ?? "";
+}
+
+export function fascardAccountId(): string {
+  return process.env.FASCARD_ACCOUNT_ID ?? "";
 }
 
 async function fetchToken(): Promise<string> {
@@ -82,4 +91,104 @@ export function fascardGet(path: string): Promise<unknown> {
 
 export function fascardPost(path: string, body: unknown): Promise<unknown> {
   return request("POST", path, body);
+}
+
+export type FascardTransaction = {
+  ID: number;
+  DateTime: string; // UTC
+  TransType: number;
+  TransSubType: number;
+  LocationID: number;
+  MachNo: number | null;
+  CashAmount: number;
+  CreditCardAmount: number;
+};
+
+// Per CCI's Transaction Types & SubTypes reference: TransType 100 is "Vend
+// sale", and SubType 0 is specifically a machine start (1 = credit card
+// surcharge line item, 2 = point of sale -- neither is a machine running).
+export const TURN_TRANS_TYPE = 100;
+export const TURN_TRANS_SUBTYPE = 0;
+
+const TRANSACT_PAGE_SIZE = 500;
+const TRANSACT_MAX_PAGES = 20; // safety cap: 10,000 transactions
+
+/**
+ * Fetches FasCard transactions back to `sinceUTC`, paginating with the
+ * documented lastID/Older cursor. There is no date-range query parameter --
+ * CCI's API only supports paging by transaction ID -- so this walks pages
+ * newest-first until a page's oldest transaction predates the cutoff, or
+ * the safety cap is hit.
+ *
+ * The exact direction `lastID`/`Older` page in is not spelled out in CCI's
+ * docs beyond the field names, so this assumes the conventional reading:
+ * the first call (no lastID) returns the most recent transactions, and
+ * passing the lowest ID seen so far as `lastID` with `Older: true` continues
+ * further back in time. `diagnostics` reports what was actually observed
+ * (page count, ID and date range) so a caller can tell if that assumption
+ * held or the results look wrong.
+ */
+export async function fascardRecentTransactions(sinceUTC: Date): Promise<{
+  transactions: FascardTransaction[];
+  diagnostics: {
+    pagesFetched: number;
+    hitPageCap: boolean;
+    oldestSeen: string | null;
+    newestSeen: string | null;
+  };
+}> {
+  const accountId = fascardAccountId();
+  const all: FascardTransaction[] = [];
+  let lastId: number | null = null;
+  let pagesFetched = 0;
+  let hitPageCap = false;
+
+  for (let page = 0; page < TRANSACT_MAX_PAGES; page++) {
+    const params = new URLSearchParams({
+      AccountID: accountId,
+      UserAccountID: "0",
+      Limit: String(TRANSACT_PAGE_SIZE),
+    });
+    if (lastId !== null) {
+      params.set("lastID", String(lastId));
+      params.set("Older", "true");
+    }
+
+    const result = await fascardGet(`/api/Transact?${params.toString()}`);
+    const batch: FascardTransaction[] = Array.isArray(result)
+      ? result
+      : Array.isArray((result as { Transactions?: unknown })?.Transactions)
+      ? (result as { Transactions: FascardTransaction[] }).Transactions
+      : [];
+
+    pagesFetched++;
+    if (batch.length === 0) break;
+
+    all.push(...batch);
+    const oldestInBatch = batch.reduce((min, t) => (t.ID < min ? t.ID : min), batch[0].ID);
+    const oldestDateInBatch = batch.reduce(
+      (min, t) => (t.DateTime < min ? t.DateTime : min),
+      batch[0].DateTime
+    );
+
+    if (oldestDateInBatch < sinceUTC.toISOString()) break;
+    if (batch.length < TRANSACT_PAGE_SIZE) break; // short page: no more data
+
+    lastId = oldestInBatch;
+
+    if (page === TRANSACT_MAX_PAGES - 1) hitPageCap = true;
+  }
+
+  const inWindow = all.filter((t) => t.DateTime >= sinceUTC.toISOString());
+  const dates = all.map((t) => t.DateTime).sort();
+
+  return {
+    transactions: inWindow,
+    diagnostics: {
+      pagesFetched,
+      hitPageCap,
+      oldestSeen: dates[0] ?? null,
+      newestSeen: dates[dates.length - 1] ?? null,
+    },
+  };
 }

@@ -2,20 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  fascardConfigured,
+  fascardRecentTransactions,
+  TURN_TRANS_TYPE,
+  TURN_TRANS_SUBTYPE,
+} from "@/lib/fascard";
 
 /**
  * Turns per day — how many times the average washer runs in a day.
  *
  *   TPD = washer cycles ÷ (washers × days)
  *
- * Until the card readers are in, there is no cycle counter anywhere, so cycles
- * are inferred from money: washer revenue ÷ the average price of a wash. That
- * makes this an estimate, and the response carries everything needed to judge
- * how good an estimate it is — the inputs, the assumed vend price, and how
- * much revenue could not be attributed to washers at all.
+ * Only 7 machines have FasCard card readers, so cycles come from two
+ * different sources depending on the machine:
  *
- * Dryers are excluded on purpose. A turn is a visit, and the wash is what
- * brings someone in; counting dryer cycles as turns double-counts the trip.
+ *  - A washer with a FasCard reader (Equipment → fascardMachNo set) gets a
+ *    real cycle count: FasCard transactions of type "Vend sale / Machine"
+ *    (TransType 100, SubType 0) for that machine number, this month.
+ *  - A cash-only washer has no FasCard data at all, so its cycles are still
+ *    inferred from money: its share of washer revenue ÷ the average price
+ *    of a wash. That portion stays an estimate.
+ *
+ * The response reports both halves separately so the page can show which
+ * part of the number is measured and which part is estimated, rather than
+ * quietly blending them into one unlabeled figure.
+ *
+ * Dryers are excluded on purpose, measured or not. A turn is a visit, and
+ * the wash is what brings someone in; counting dryer cycles as turns
+ * double-counts the trip.
  */
 
 const WEAK = 2;
@@ -56,17 +71,43 @@ export async function GET(req: NextRequest) {
   const [washers, entries, pricing] = await Promise.all([
     prisma.machine.findMany({
       where: { type: "WASHER", status: { not: "RETIRED" } },
-      select: { id: true, model: true },
+      select: { id: true, model: true, fascardMachNo: true },
     }),
     prisma.revenueEntry.findMany({
       where: { date: { gte: start, lt: end } },
-      select: { amount: true, machineType: true, machine: { select: { type: true } } },
+      select: { amount: true, machineType: true, machine: { select: { id: true, type: true } } },
     }),
     prisma.machineModelPricing.findMany({ where: { machineType: "WASHER" } }),
   ]);
 
-  // ── Assumed vend: the average offered cycle price, weighted by how many
-  //    machines of each model are on the floor. ─────────────────────────────
+  const mappedWashers = washers.filter((w) => w.fascardMachNo != null);
+  const unmappedWashers = washers.filter((w) => w.fascardMachNo == null);
+  const totalWasherCount = washers.length;
+
+  // ── Measured half: real counts from FasCard, for washers with a reader ───
+  let measuredTurns: number | null = null;
+  let measuredError: string | null = null;
+  let measuredDiagnostics: Awaited<ReturnType<typeof fascardRecentTransactions>>["diagnostics"] | null = null;
+
+  if (mappedWashers.length > 0 && !fascardConfigured()) {
+    // A machine has a FasCard Machine # set, but the FASCARD_* environment
+    // variables aren't in place yet -- say so, rather than silently
+    // counting those washers as 0 turns with no explanation.
+    measuredError = "FasCard isn't configured yet (Settings → FasCard Connection).";
+  } else if (mappedWashers.length > 0) {
+    try {
+      const machNos = new Set(mappedWashers.map((w) => w.fascardMachNo));
+      const { transactions, diagnostics } = await fascardRecentTransactions(start);
+      measuredTurns = transactions.filter(
+        (t) => t.TransType === TURN_TRANS_TYPE && t.TransSubType === TURN_TRANS_SUBTYPE && machNos.has(t.MachNo)
+      ).length;
+      measuredDiagnostics = diagnostics;
+    } catch (err) {
+      measuredError = err instanceof Error ? err.message : "Unknown error fetching FasCard transactions";
+    }
+  }
+
+  // ── Estimated half: revenue ÷ assumed vend, for cash-only washers only ───
   const priceByModel = new Map<string, number>();
   for (const record of pricing) {
     const values = CYCLE_KEYS.map((key) => Number((record as Record<string, unknown>)[key]))
@@ -76,30 +117,35 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const priced = washers.filter((w) => w.model && priceByModel.has(w.model));
+  const pricedUnmapped = unmappedWashers.filter((w) => w.model && priceByModel.has(w.model));
   const assumedVend =
-    priced.length > 0
-      ? priced.reduce((sum, w) => sum + priceByModel.get(w.model!)!, 0) / priced.length
+    pricedUnmapped.length > 0
+      ? pricedUnmapped.reduce((sum, w) => sum + priceByModel.get(w.model!)!, 0) / pricedUnmapped.length
       : null;
 
-  // ── Washer revenue, and what could not be attributed ─────────────────────
-  let washerRevenue = 0;
-  let unattributed = 0;
+  const unmappedIds = new Set(unmappedWashers.map((w) => w.id));
+  let unmappedWasherRevenue = 0;
   let totalRevenue = 0;
+  let unattributed = 0;
 
   for (const entry of entries) {
     const amount = Number(entry.amount);
     totalRevenue += amount;
     const type = entry.machine?.type ?? entry.machineType ?? null;
-    if (type === "WASHER") washerRevenue += amount;
-    else if (type === null) unattributed += amount;
+    const machineId = entry.machine?.id ?? null;
+    if (type === "WASHER" && (machineId === null || unmappedIds.has(machineId))) {
+      unmappedWasherRevenue += amount;
+    }
+    if (type === null) unattributed += amount;
   }
 
-  const washerCount = washers.length;
-  const canEstimate = Boolean(assumedVend) && washerCount > 0;
+  const canEstimateUnmapped = unmappedWashers.length === 0 || Boolean(assumedVend);
+  const estimatedTurns = unmappedWashers.length === 0 ? 0 : assumedVend ? unmappedWasherRevenue / assumedVend : null;
 
-  const estimatedTurns = canEstimate ? washerRevenue / assumedVend! : null;
-  const turnsPerDay = canEstimate ? estimatedTurns! / (washerCount * days) : null;
+  // ── Combine ────────────────────────────────────────────────────────────
+  const canCompute = totalWasherCount > 0 && canEstimateUnmapped;
+  const combinedTurns = canCompute ? (measuredTurns ?? 0) + (estimatedTurns ?? 0) : null;
+  const turnsPerDay = canCompute ? combinedTurns! / (totalWasherCount * days) : null;
 
   const band =
     turnsPerDay === null
@@ -117,23 +163,28 @@ export async function GET(req: NextRequest) {
     turnsPerDay,
     band,
     thresholds: { weak: WEAK, healthy: HEALTHY, atCapacity: AT_CAPACITY },
-    inputs: {
-      washerRevenue,
+    totalWasherCount,
+    days,
+    daysInMonth,
+    partialMonth: partial,
+    measured: {
+      washerCount: mappedWashers.length,
+      turns: measuredTurns,
+      error: measuredError,
+      diagnostics: measuredDiagnostics,
+    },
+    estimated: {
+      washerCount: unmappedWashers.length,
+      washerRevenue: unmappedWasherRevenue,
       totalRevenue,
       unattributedRevenue: unattributed,
-      washerCount,
-      days,
-      daysInMonth,
-      partialMonth: partial,
       assumedVend,
-      pricedWashers: priced.length,
+      pricedWashers: pricedUnmapped.length,
       estimatedTurns,
     },
-    // Why an estimate is unavailable, so the page can say so instead of
-    // rendering a dash with no explanation.
-    unavailableReason: canEstimate
+    unavailableReason: canCompute
       ? null
-      : washerCount === 0
+      : totalWasherCount === 0
       ? "No active washers are recorded."
       : "No washer cycle prices are configured under Equipment → Pricing.",
   });

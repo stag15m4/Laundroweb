@@ -107,6 +107,10 @@ model Machine {
   keyCode        String?
   floorZone      String?
   floorOrder     Int?
+  /// This machine's reader number in FasCard, for matching FasCard
+  /// transactions to this machine. Null for machines with no card reader
+  /// (cash only) -- those have no FasCard data at all, by design.
+  fascardMachNo  Int?          @unique
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

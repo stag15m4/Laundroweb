@@ -11,8 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/utils";
-import { User, Plus, Pencil, Trash2, KeyRound, Shield, Smartphone } from "lucide-react";
+import { User, Plus, Pencil, Trash2, KeyRound, Shield, Smartphone, Plug } from "lucide-react";
 
 type UserRecord = {
   id: string;
@@ -218,6 +219,48 @@ export default function SettingsPage() {
       const data = await res.json();
       setUserMsg(data.error ?? "Failed to update user.");
     }
+  }
+
+  // ── FasCard connection test / raw explorer ────────────────────────────
+  const [fcTesting, setFcTesting] = useState(false);
+  const [fcTestResult, setFcTestResult] = useState<{ ok: boolean; body: string } | null>(null);
+  const [fcPath, setFcPath] = useState("/api/Transactions");
+  const [fcMethod, setFcMethod] = useState<"GET" | "POST">("GET");
+  const [fcBody, setFcBody] = useState("");
+  const [fcExploring, setFcExploring] = useState(false);
+  const [fcExploreResult, setFcExploreResult] = useState<{ ok: boolean; body: string } | null>(null);
+
+  async function handleFcTest() {
+    setFcTesting(true);
+    setFcTestResult(null);
+    const res = await fetch("/api/fascard/test");
+    const data = await res.json();
+    setFcTesting(false);
+    setFcTestResult({ ok: res.ok && data.ok, body: JSON.stringify(data, null, 2) });
+  }
+
+  async function handleFcExplore(e: React.FormEvent) {
+    e.preventDefault();
+    setFcExploring(true);
+    setFcExploreResult(null);
+    let parsedBody: unknown = undefined;
+    if (fcMethod === "POST" && fcBody.trim()) {
+      try {
+        parsedBody = JSON.parse(fcBody);
+      } catch {
+        setFcExploring(false);
+        setFcExploreResult({ ok: false, body: "Body is not valid JSON." });
+        return;
+      }
+    }
+    const res = await fetch("/api/fascard/explore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: fcPath, method: fcMethod, body: parsedBody }),
+    });
+    const data = await res.json();
+    setFcExploring(false);
+    setFcExploreResult({ ok: res.ok && data.ok, body: JSON.stringify(data, null, 2) });
   }
 
   async function handleDeleteUser(id: string, name: string) {
@@ -453,6 +496,86 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* FasCard integration — owner only, still in discovery: the auth
+            endpoint is documented and confirmed, but data-endpoint response
+            shapes are not, so this is a raw connection test + explorer
+            rather than a finished data integration. */}
+        {isOwner && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Plug className="h-4 w-4" />
+                FasCard Connection
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-500">
+                Requires FASCARD_USERNAME, FASCARD_PASSWORD, and
+                FASCARD_LOCATION_ID set as environment variables. Test the
+                login below, then use the explorer to see what a real
+                endpoint actually returns before we wire it into a KPI.
+              </p>
+
+              <Button type="button" onClick={handleFcTest} disabled={fcTesting}>
+                {fcTesting ? "Testing…" : "Test Connection"}
+              </Button>
+              {fcTestResult && (
+                <pre
+                  className={`text-xs rounded-md px-3 py-2 overflow-x-auto ${
+                    fcTestResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"
+                  }`}
+                >
+                  {fcTestResult.body}
+                </pre>
+              )}
+
+              <div className="border-t border-gray-100 pt-4">
+                <form onSubmit={handleFcExplore} className="space-y-3">
+                  <div className="flex gap-2">
+                    <Select value={fcMethod} onValueChange={(v) => setFcMethod(v as "GET" | "POST")}>
+                      <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="GET">GET</SelectItem>
+                        <SelectItem value="POST">POST</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={fcPath}
+                      onChange={(e) => setFcPath(e.target.value)}
+                      placeholder="/api/Transactions"
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                  {fcMethod === "POST" && (
+                    <div className="space-y-1.5">
+                      <Label>Body (JSON, optional)</Label>
+                      <Textarea
+                        value={fcBody}
+                        onChange={(e) => setFcBody(e.target.value)}
+                        rows={3}
+                        placeholder='{"LocationID": 123}'
+                        className="font-mono text-sm"
+                      />
+                    </div>
+                  )}
+                  <Button type="submit" variant="outline" disabled={fcExploring}>
+                    {fcExploring ? "Sending…" : "Send"}
+                  </Button>
+                </form>
+                {fcExploreResult && (
+                  <pre
+                    className={`mt-3 text-xs rounded-md px-3 py-2 overflow-x-auto max-h-96 ${
+                      fcExploreResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"
+                    }`}
+                  >
+                    {fcExploreResult.body}
+                  </pre>
+                )}
               </div>
             </CardContent>
           </Card>

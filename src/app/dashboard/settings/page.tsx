@@ -224,7 +224,7 @@ export default function SettingsPage() {
   // ── FasCard connection test / raw explorer ────────────────────────────
   const [fcTesting, setFcTesting] = useState(false);
   const [fcTestResult, setFcTestResult] = useState<{ ok: boolean; body: string } | null>(null);
-  const [fcPath, setFcPath] = useState("/api/Transactions");
+  const [fcPath, setFcPath] = useState("/api/Transact");
   const [fcMethod, setFcMethod] = useState<"GET" | "POST">("GET");
   const [fcBody, setFcBody] = useState("");
   const [fcExploring, setFcExploring] = useState(false);
@@ -547,7 +547,7 @@ export default function SettingsPage() {
                     <Input
                       value={fcPath}
                       onChange={(e) => setFcPath(e.target.value)}
-                      placeholder="/api/Transactions"
+                      placeholder="/api/Transact"
                       className="font-mono text-sm"
                     />
                   </div>

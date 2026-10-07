@@ -20,9 +20,9 @@ export async function GET() {
   }
 
   try {
-    // Locations is listed in CCI's docs as a basic read endpoint, and
-    // doesn't require guessing at any other endpoint's request shape.
-    const result = await fascardGet(`/api/Locations/${fascardLocationId()}`);
+    // Location (singular) is the documented single-resource read endpoint:
+    // https://cardconceptsinc.atlassian.net/wiki/spaces/FCD/pages/1307246626/Locations
+    const result = await fascardGet(`/api/Location/${fascardLocationId()}`);
     return NextResponse.json({ ok: true, locationId: fascardLocationId(), result });
   } catch (err) {
     return NextResponse.json(

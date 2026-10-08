@@ -19,14 +19,21 @@ type Turns = {
   turnsPerDay: number | null;
   band: "low" | "building" | "healthy" | "at-capacity" | null;
   thresholds: { weak: number; healthy: number; atCapacity: number };
-  inputs: {
+  totalWasherCount: number;
+  days: number;
+  daysInMonth: number;
+  partialMonth: boolean;
+  measured: {
+    washerCount: number;
+    turns: number | null;
+    error: string | null;
+  };
+  estimated: {
+    washerCount: number;
     washerRevenue: number;
+    ambiguousRevenue: number;
     totalRevenue: number;
     unattributedRevenue: number;
-    washerCount: number;
-    days: number;
-    daysInMonth: number;
-    partialMonth: boolean;
     assumedVend: number | null;
     pricedWashers: number;
     estimatedTurns: number | null;
@@ -140,7 +147,7 @@ export default function ReportsPage() {
                 <RefreshCw className="h-4 w-4 text-blue-600" />
                 Turns Per Day
                 <span className="ml-1 text-xs font-normal text-gray-400">
-                  {turns.month} · estimated
+                  {turns.month} · {turns.measured.washerCount > 0 ? "measured + estimated" : "estimated"}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -178,27 +185,44 @@ export default function ReportsPage() {
                       How this was worked out
                     </p>
                     <dl className="space-y-1 text-sm">
-                      <div className="flex justify-between gap-4">
-                        <dt className="text-gray-500">Washer revenue</dt>
-                        <dd className="tabular-nums">{formatCurrency(turns.inputs.washerRevenue)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt className="text-gray-500">÷ assumed vend</dt>
-                        <dd className="tabular-nums">
-                          {turns.inputs.assumedVend ? formatCurrency(turns.inputs.assumedVend) : "—"}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt className="text-gray-500">= estimated washes</dt>
-                        <dd className="tabular-nums">
-                          {turns.inputs.estimatedTurns?.toFixed(0) ?? "—"}
-                        </dd>
-                      </div>
+                      {turns.measured.washerCount > 0 && (
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-gray-500">
+                            Measured — {turns.measured.washerCount} washer
+                            {turns.measured.washerCount === 1 ? "" : "s"} with a card reader
+                          </dt>
+                          <dd className="tabular-nums">
+                            {turns.measured.turns?.toFixed(0) ?? "—"}
+                          </dd>
+                        </div>
+                      )}
+                      {turns.estimated.washerCount > 0 && (
+                        <>
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-gray-500">
+                              Cash-only washer revenue ({turns.estimated.washerCount})
+                            </dt>
+                            <dd className="tabular-nums">{formatCurrency(turns.estimated.washerRevenue)}</dd>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-gray-500">÷ assumed vend</dt>
+                            <dd className="tabular-nums">
+                              {turns.estimated.assumedVend ? formatCurrency(turns.estimated.assumedVend) : "—"}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-gray-500">= estimated washes</dt>
+                            <dd className="tabular-nums">
+                              {turns.estimated.estimatedTurns?.toFixed(0) ?? "—"}
+                            </dd>
+                          </div>
+                        </>
+                      )}
                       <div className="flex justify-between gap-4 border-t pt-1">
                         <dt className="text-gray-500">
-                          ÷ {turns.inputs.washerCount} washers × {turns.inputs.days} day
-                          {turns.inputs.days === 1 ? "" : "s"}
-                          {turns.inputs.partialMonth && " so far"}
+                          ÷ {turns.totalWasherCount} washers × {turns.days} day
+                          {turns.days === 1 ? "" : "s"}
+                          {turns.partialMonth && " so far"}
                         </dt>
                         <dd className="tabular-nums font-semibold">
                           {turns.turnsPerDay.toFixed(2)}
@@ -206,25 +230,43 @@ export default function ReportsPage() {
                       </div>
                     </dl>
 
-                    {turns.inputs.unattributedRevenue > 0 && (
+                    {turns.measured.error && (
+                      <p className="mt-3 text-xs text-red-700 bg-red-50 rounded-md px-3 py-2">
+                        Couldn&apos;t reach FasCard for the measured washers this time
+                        ({turns.measured.error}), so they&apos;re counted as 0 turns above
+                        until the next refresh.
+                      </p>
+                    )}
+                    {turns.estimated.ambiguousRevenue > 0 && (
                       <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
-                        {formatCurrency(turns.inputs.unattributedRevenue)} of this month&apos;s
+                        {formatCurrency(turns.estimated.ambiguousRevenue)} of this month&apos;s
+                        washer revenue was logged as &quot;All washers&quot; rather than a
+                        specific machine. Now that some washers are measured directly, that
+                        can&apos;t be split between them and the cash-only ones without
+                        double-counting, so it&apos;s left out of the estimate. Log collections
+                        per machine on the Revenue page to include it.
+                      </p>
+                    )}
+                    {turns.estimated.unattributedRevenue > 0 && (
+                      <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
+                        {formatCurrency(turns.estimated.unattributedRevenue)} of this month&apos;s
                         revenue is not marked as washers or dryers, so it is left out.
                         Tag collections on the Revenue page to sharpen this.
                       </p>
                     )}
-                    {turns.inputs.pricedWashers < turns.inputs.washerCount && (
-                      <p className="mt-2 text-xs text-amber-700">
-                        {turns.inputs.washerCount - turns.inputs.pricedWashers} of{" "}
-                        {turns.inputs.washerCount} washers have no configured price, so
-                        the assumed vend comes from the other{" "}
-                        {turns.inputs.pricedWashers}.
-                      </p>
-                    )}
+                    {turns.estimated.washerCount > 0 &&
+                      turns.estimated.pricedWashers < turns.estimated.washerCount && (
+                        <p className="mt-2 text-xs text-amber-700">
+                          {turns.estimated.washerCount - turns.estimated.pricedWashers} of{" "}
+                          {turns.estimated.washerCount} cash-only washers have no configured
+                          price, so the assumed vend comes from the other{" "}
+                          {turns.estimated.pricedWashers}.
+                        </p>
+                      )}
                     <p className="mt-2 text-xs text-gray-400">
-                      Cycles are inferred from money until the card readers are
-                      installed; the vend price is the average cycle price across
-                      your washers.
+                      {turns.measured.washerCount > 0
+                        ? "Washers with a FasCard reader (Equipment → FasCard Machine #) show real counts. Cash-only washers are still inferred from revenue ÷ the average cycle price."
+                        : "Cycles are inferred from money until a machine has a FasCard reader; the vend price is the average cycle price across your washers."}
                     </p>
                   </div>
                 </div>

@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "OPERATIONAL",
       notes: body.notes || null,
       keyCode: body.keyCode || null,
+      fascardMachNo: body.fascardMachNo === "" || body.fascardMachNo == null ? null : Number(body.fascardMachNo),
     },
   });
   return NextResponse.json(machine, { status: 201 });

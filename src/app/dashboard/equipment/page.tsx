@@ -69,6 +69,7 @@ type Machine = {
   keyCode: string | null;
   floorZone: string | null;
   floorOrder: number | null;
+  fascardMachNo: number | null;
   _count: { maintenanceLogs: number };
 };
 
@@ -231,6 +232,7 @@ const emptyMachineForm = {
   status: "OPERATIONAL",
   notes: "",
   keyCode: "",
+  fascardMachNo: "",
 };
 
 // ── KeyCode ────────────────────────────────────────────────────────────────────
@@ -488,6 +490,7 @@ function MachineDetailModal({
         status: machine.status,
         notes: machine.notes ?? "",
         keyCode: machine.keyCode ?? "",
+        fascardMachNo: machine.fascardMachNo != null ? String(machine.fascardMachNo) : "",
       });
     }
   }, [machine]);
@@ -585,6 +588,7 @@ function MachineDetailModal({
         status: "OPERATIONAL",
         notes: machine.notes ?? "",
         keyCode: machine.keyCode ?? "",
+        fascardMachNo: "",  // unique per physical unit — fill in after cloning
       }),
     });
     if (res.ok) {
@@ -1322,6 +1326,16 @@ function MachineDetailModal({
                   />
                 </div>
                 <div className="space-y-1.5">
+                  <Label htmlFor="s-fascard">FasCard Machine #</Label>
+                  <Input
+                    id="s-fascard"
+                    type="number"
+                    value={setupForm.fascardMachNo}
+                    onChange={(e) => setSetupForm((f) => ({ ...f, fascardMachNo: e.target.value }))}
+                    placeholder="Leave blank if cash only"
+                  />
+                </div>
+                <div className="space-y-1.5">
                   <Label htmlFor="s-location">Location</Label>
                   <Input
                     id="s-location"
@@ -1953,6 +1967,16 @@ export default function EquipmentPage() {
                   value={addForm.keyCode}
                   onChange={(e) => setAddForm((f) => ({ ...f, keyCode: e.target.value }))}
                   placeholder="Coin box or panel access code"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="a-fascard">FasCard Machine #</Label>
+                <Input
+                  id="a-fascard"
+                  type="number"
+                  value={addForm.fascardMachNo}
+                  onChange={(e) => setAddForm((f) => ({ ...f, fascardMachNo: e.target.value }))}
+                  placeholder="Leave blank if cash only"
                 />
               </div>
               <div className="space-y-1.5">

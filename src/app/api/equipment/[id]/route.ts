@@ -26,6 +26,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.notes !== undefined) data.notes = body.notes || null;
   if (body.keyCode !== undefined) data.keyCode = body.keyCode || null;
   if (body.cycleCount !== undefined) data.cycleCount = body.cycleCount;
+  if (body.fascardMachNo !== undefined) {
+    data.fascardMachNo = body.fascardMachNo === "" || body.fascardMachNo === null
+      ? null
+      : Number(body.fascardMachNo);
+  }
   if (body.installDate !== undefined) {
     data.installDate = body.installDate ? new Date(body.installDate) : null;
   }

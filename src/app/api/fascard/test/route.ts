@@ -14,7 +14,10 @@ export async function GET() {
 
   if (!fascardConfigured()) {
     return NextResponse.json(
-      { ok: false, error: "FASCARD_USERNAME, FASCARD_PASSWORD, or FASCARD_LOCATION_ID is not set." },
+      {
+        ok: false,
+        error: "FASCARD_USERNAME, FASCARD_PASSWORD, FASCARD_LOCATION_ID, or FASCARD_ACCOUNT_ID is not set.",
+      },
       { status: 503 }
     );
   }

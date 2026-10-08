@@ -31,6 +31,7 @@ type Turns = {
   estimated: {
     washerCount: number;
     washerRevenue: number;
+    ambiguousRevenue: number;
     totalRevenue: number;
     unattributedRevenue: number;
     assumedVend: number | null;
@@ -234,6 +235,16 @@ export default function ReportsPage() {
                         Couldn&apos;t reach FasCard for the measured washers this time
                         ({turns.measured.error}), so they&apos;re counted as 0 turns above
                         until the next refresh.
+                      </p>
+                    )}
+                    {turns.estimated.ambiguousRevenue > 0 && (
+                      <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
+                        {formatCurrency(turns.estimated.ambiguousRevenue)} of this month&apos;s
+                        washer revenue was logged as &quot;All washers&quot; rather than a
+                        specific machine. Now that some washers are measured directly, that
+                        can&apos;t be split between them and the cash-only ones without
+                        double-counting, so it&apos;s left out of the estimate. Log collections
+                        per machine on the Revenue page to include it.
                       </p>
                     )}
                     {turns.estimated.unattributedRevenue > 0 && (

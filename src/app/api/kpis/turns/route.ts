@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   fascardConfigured,
+  fascardLocationId,
   fascardRecentTransactions,
   TURN_TRANS_TYPE,
   TURN_TRANS_SUBTYPE,
@@ -97,9 +98,14 @@ export async function GET(req: NextRequest) {
   } else if (mappedWashers.length > 0) {
     try {
       const machNos = new Set(mappedWashers.map((w) => w.fascardMachNo));
-      const { transactions, diagnostics } = await fascardRecentTransactions(start);
+      const locationId = Number(fascardLocationId());
+      const { transactions, diagnostics } = await fascardRecentTransactions(start, end);
       measuredTurns = transactions.filter(
-        (t) => t.TransType === TURN_TRANS_TYPE && t.TransSubType === TURN_TRANS_SUBTYPE && machNos.has(t.MachNo)
+        (t) =>
+          t.TransType === TURN_TRANS_TYPE &&
+          t.TransSubType === TURN_TRANS_SUBTYPE &&
+          machNos.has(t.MachNo) &&
+          t.LocationID === locationId
       ).length;
       measuredDiagnostics = diagnostics;
     } catch (err) {
@@ -127,14 +133,30 @@ export async function GET(req: NextRequest) {
   let unmappedWasherRevenue = 0;
   let totalRevenue = 0;
   let unattributed = 0;
+  // Revenue logged via the Revenue page's "All washers" option (no specific
+  // machine) covers the whole fleet, mapped and unmapped alike. While no
+  // washer is measured, that revenue unambiguously belongs to the estimate
+  // (every washer is unmapped). Once any washer is mapped, its real starts
+  // are already counted via measuredTurns, and there's no way to know how
+  // much of an unattributed total is its share -- so rather than guess (and
+  // risk counting the same machine's turns twice), that revenue is left out
+  // of the estimate and reported separately instead.
+  let ambiguousWasherRevenue = 0;
 
   for (const entry of entries) {
     const amount = Number(entry.amount);
     totalRevenue += amount;
     const type = entry.machine?.type ?? entry.machineType ?? null;
     const machineId = entry.machine?.id ?? null;
-    if (type === "WASHER" && (machineId === null || unmappedIds.has(machineId))) {
-      unmappedWasherRevenue += amount;
+    if (type === "WASHER") {
+      if (machineId !== null) {
+        if (unmappedIds.has(machineId)) unmappedWasherRevenue += amount;
+        // else: a specific mapped washer -- already counted via measuredTurns
+      } else if (mappedWashers.length === 0) {
+        unmappedWasherRevenue += amount;
+      } else {
+        ambiguousWasherRevenue += amount;
+      }
     }
     if (type === null) unattributed += amount;
   }
@@ -176,6 +198,7 @@ export async function GET(req: NextRequest) {
     estimated: {
       washerCount: unmappedWashers.length,
       washerRevenue: unmappedWasherRevenue,
+      ambiguousRevenue: ambiguousWasherRevenue,
       totalRevenue,
       unattributedRevenue: unattributed,
       assumedVend,

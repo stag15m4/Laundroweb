@@ -114,11 +114,13 @@ const TRANSACT_PAGE_SIZE = 500;
 const TRANSACT_MAX_PAGES = 20; // safety cap: 10,000 transactions
 
 /**
- * Fetches FasCard transactions back to `sinceUTC`, paginating with the
- * documented lastID/Older cursor. There is no date-range query parameter --
- * CCI's API only supports paging by transaction ID -- so this walks pages
- * newest-first until a page's oldest transaction predates the cutoff, or
- * the safety cap is hit.
+ * Fetches FasCard transactions in [`sinceUTC`, `untilUTC`), paginating with
+ * the documented lastID/Older cursor. There is no date-range query parameter
+ * -- CCI's API only supports paging by transaction ID -- so this walks pages
+ * newest-first (starting from whatever is most recent, which may be well
+ * after `untilUTC` for a past month) until a page's oldest transaction
+ * predates `sinceUTC`, or the safety cap is hit; the final filter then
+ * narrows to the requested window.
  *
  * The exact direction `lastID`/`Older` page in is not spelled out in CCI's
  * docs beyond the field names, so this assumes the conventional reading:
@@ -128,7 +130,10 @@ const TRANSACT_MAX_PAGES = 20; // safety cap: 10,000 transactions
  * (page count, ID and date range) so a caller can tell if that assumption
  * held or the results look wrong.
  */
-export async function fascardRecentTransactions(sinceUTC: Date): Promise<{
+export async function fascardRecentTransactions(
+  sinceUTC: Date,
+  untilUTC: Date = new Date()
+): Promise<{
   transactions: FascardTransaction[];
   diagnostics: {
     pagesFetched: number;
@@ -179,7 +184,9 @@ export async function fascardRecentTransactions(sinceUTC: Date): Promise<{
     if (page === TRANSACT_MAX_PAGES - 1) hitPageCap = true;
   }
 
-  const inWindow = all.filter((t) => t.DateTime >= sinceUTC.toISOString());
+  const inWindow = all.filter(
+    (t) => t.DateTime >= sinceUTC.toISOString() && t.DateTime < untilUTC.toISOString()
+  );
   const dates = all.map((t) => t.DateTime).sort();
 
   return {

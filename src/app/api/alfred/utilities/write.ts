@@ -22,20 +22,49 @@ export type Validated =
   | { ok: true; payload: UtilityBillPayload; summary: string }
   | { ok: false; response: NextResponse };
 
+// UtilityBill.cost is Decimal(10,2); UtilityBill.usageAmount is Decimal(10,3).
+// A value past these bounds would pass JS validation but fail the insert
+// during confirm, after the proposal token is already marked consumed --
+// leaving no bill and a token that reports "already_confirmed" on retry.
+const MAX_COST = 99_999_999.99;
+const MAX_USAGE = 9_999_999.999;
+
 function money(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-/** A bare yyyy-MM-dd is read at midday so the calendar date cannot slip a day west of UTC. */
+/** True if y-m-d is a real calendar date (rejects e.g. 2026-02-30). */
+function isValidCalendarDate(y: number, m: number, d: number): boolean {
+  if (m < 1 || m > 12 || d < 1) return false;
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate(); // "day 0" of next month = last day of this one
+  return d <= daysInMonth;
+}
+
+/**
+ * A bare yyyy-MM-dd is read at midday so the calendar date cannot slip a day
+ * west of UTC. Calendar components are validated directly rather than
+ * trusting Date's rollover behavior, which silently turns e.g. 2026-02-30
+ * into March 2 instead of rejecting it -- a human could approve the summary's
+ * February date while the stored value is really in March.
+ */
 function parseDate(raw: unknown, field: string): { ok: true; date: Date } | { ok: false; response: NextResponse } {
-  if (typeof raw !== "string" || Number.isNaN(Date.parse(raw))) {
-    return {
-      ok: false,
+  const invalid = () =>
+    ({
+      ok: false as const,
       response: alfredError(400, `invalid_${field}`, `Could not read "${String(raw)}" as a date. Use YYYY-MM-DD.`),
-    };
+    });
+
+  if (typeof raw !== "string") return invalid();
+
+  const bare = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (bare) {
+    const [, y, m, d] = bare.map(Number) as unknown as [never, number, number, number];
+    if (!isValidCalendarDate(y, m, d)) return invalid();
+    return { ok: true, date: new Date(Date.UTC(y, m - 1, d, 12)) };
   }
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T12:00:00.000Z`) : new Date(raw);
-  return { ok: true, date };
+
+  if (Number.isNaN(Date.parse(raw))) return invalid();
+  return { ok: true, date: new Date(raw) };
 }
 
 /**
@@ -105,10 +134,14 @@ export async function validateUtilityBill(body: Record<string, unknown>): Promis
     };
   }
   const usageAmount = typeof body.usageAmount === "number" ? body.usageAmount : Number(body.usageAmount);
-  if (!Number.isFinite(usageAmount) || usageAmount < 0) {
+  if (!Number.isFinite(usageAmount) || usageAmount < 0 || usageAmount > MAX_USAGE) {
     return {
       ok: false,
-      response: alfredError(400, "invalid_usage_amount", `Could not read "${String(body.usageAmount)}" as a usage amount.`),
+      response: alfredError(
+        400,
+        "invalid_usage_amount",
+        `Could not read "${String(body.usageAmount)}" as a usage amount. Must be between 0 and ${MAX_USAGE}.`
+      ),
     };
   }
 
@@ -129,22 +162,30 @@ export async function validateUtilityBill(body: Record<string, unknown>): Promis
     };
   }
   const cost = typeof body.cost === "number" ? body.cost : Number(body.cost);
-  if (!Number.isFinite(cost) || cost < 0) {
+  if (!Number.isFinite(cost) || cost < 0 || cost > MAX_COST) {
     return {
       ok: false,
-      response: alfredError(400, "invalid_cost", `Could not read "${String(body.cost)}" as a cost. Send a number of dollars.`),
+      response: alfredError(
+        400,
+        "invalid_cost",
+        `Could not read "${String(body.cost)}" as a cost. Send a number of dollars between 0 and ${MAX_COST}.`
+      ),
     };
   }
 
   // ── Summary, written for a person to approve ────────────────────────────
   const period = `${body.billingPeriodStart} to ${body.billingPeriodEnd}`;
   const provider = typeof body.provider === "string" && body.provider.trim() ? body.provider.trim() : null;
+  const accountNumber = typeof body.accountNumber === "string" && body.accountNumber.trim() ? body.accountNumber.trim() : null;
+  const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
   const typeLower = type.toLowerCase();
   const article = /^[aeiou]/.test(typeLower) ? "an" : "a";
   const summary =
     `Log ${article} ${typeLower} bill${provider ? ` from ${provider}` : ""} for ${period}: ` +
     `${usageAmount} ${usageUnit}, total ${money(cost)}` +
-    `${dueDate ? `, due ${dueDate.toISOString().slice(0, 10)}` : ""}.`;
+    `${dueDate ? `, due ${dueDate.toISOString().slice(0, 10)}` : ""}` +
+    `${accountNumber ? `, account ${accountNumber}` : ""}.` +
+    `${notes ? ` Notes: ${notes}` : ""}`;
 
   return {
     ok: true,
@@ -158,8 +199,8 @@ export async function validateUtilityBill(body: Record<string, unknown>): Promis
       usageUnit,
       cost,
       provider,
-      accountNumber: typeof body.accountNumber === "string" && body.accountNumber.trim() ? body.accountNumber.trim() : null,
-      notes: typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null,
+      accountNumber,
+      notes,
     },
   };
 }

@@ -1,6 +1,6 @@
 # Laundroweb write API — integration guide for Alfred
 
-Laundroweb exposes two write endpoints for Alfred. Both use a **two-step
+Laundroweb exposes three write endpoints for Alfred. All use a **two-step
 propose/confirm flow**: nothing is ever written by a single call.
 
 You cannot change anything in Laundroweb on your own. You propose a change,
@@ -179,6 +179,67 @@ The note is saved against the machine and appears on the Notes page.
 
 ---
 
+## `POST /api/alfred/utilities`
+
+Logs a utility bill (electric, water, gas, or sewer).
+
+### Propose request
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `type` | string | **yes** | `ELECTRIC` \| `WATER` \| `GAS` \| `SEWER`. Case-insensitive |
+| `billingPeriodStart` | string | **yes** | `YYYY-MM-DD` |
+| `billingPeriodEnd` | string | **yes** | `YYYY-MM-DD`. Must not be before `billingPeriodStart` |
+| `usageAmount` | number \| string | **yes** | e.g. `1268` for kWh |
+| `usageUnit` | string | **yes** | e.g. `"kWh"`, `"gallons"`, `"therms"` |
+| `cost` | number \| string | **yes** | The **total amount due** (including taxes/fees), in dollars — not just the base usage charge |
+| `dueDate` | string | no | `YYYY-MM-DD` |
+| `provider` | string | no | e.g. `"Duke Energy"` |
+| `accountNumber` | string | no | |
+| `notes` | string | no | Anything worth keeping that doesn't fit elsewhere — peak demand, a rate change, taxes/fees breakdown |
+
+```json
+{
+  "type": "electric",
+  "billingPeriodStart": "2026-08-27",
+  "billingPeriodEnd": "2026-09-25",
+  "dueDate": "2026-10-26",
+  "usageAmount": 1268,
+  "usageUnit": "kWh",
+  "cost": 221.01,
+  "notes": "Peak demand 6.40 kW on Sep 2 at 3:45 PM. Base charges $206.55 + taxes $14.46."
+}
+```
+
+### Propose response — `200`
+
+Same envelope as maintenance and machines. `details` is the resolved payload
+(type uppercased, dates normalized to ISO).
+
+### Confirm
+
+```json
+{ "confirmationToken": "…" }
+```
+
+Response — `200`:
+
+```json
+{
+  "status": "confirmed",
+  "summary": "…",
+  "utilityBillId": "…",
+  "record": { "…": "the created bill" }
+}
+```
+
+There's no utility-type-specific lookup here — `cost` and `usageAmount` are
+taken as given. If a bill breaks down charges you aren't sure how to total
+(base charge, taxes, fees, credits), send the **grand total due** as `cost`
+and put the breakdown in `notes` rather than guessing which pieces to add.
+
+---
+
 ## Errors
 
 Every failure is a non-2xx status with this body:
@@ -194,8 +255,8 @@ repeated to the human as-is.
 |---|---|---|
 | `401` | `Unauthorized` | Token missing or wrong. Not recoverable in conversation — tell the human the integration is misconfigured |
 | `400` | `invalid_json` | Bug on your side; fix the request |
-| `400` | `missing_machine`, `missing_type`, `missing_description`, `missing_status` | Ask the human for the missing detail |
-| `400` | `invalid_date`, `invalid_cost`, `invalid_status`, `invalid_parts`, `invalid_part_quantity` | Re-ask for that one value |
+| `400` | `missing_machine`, `missing_type`, `missing_description`, `missing_status`, `missing_billing_period_start`, `missing_billing_period_end`, `missing_usage_amount`, `missing_usage_unit`, `missing_cost` | Ask the human for the missing detail |
+| `400` | `invalid_date`, `invalid_cost`, `invalid_status`, `invalid_parts`, `invalid_part_quantity`, `invalid_type`, `invalid_billing_period_start`, `invalid_billing_period_end`, `invalid_billing_period`, `invalid_due_date`, `invalid_usage_amount` | Re-ask for that one value |
 | `400` | `note_required` | Ask why the machine is going out of service, then propose again |
 | `400` | `missing_confirmation_token` | Bug on your side |
 | `404` | `machine_not_found`, `part_not_found` | Tell the human nothing matched; ask them to name it exactly |
@@ -239,7 +300,11 @@ machine is worse than asking one more question.
 
 ## Read endpoints
 
-Unchanged and still `GET`-only: `/api/alfred/kpis`, `/revenue`, `/expenses`,
-`/utilities`, `/machines`, `/maintenance`. Same `X-Alfred-Token` header. Use
-them to check current state before proposing — for example, reading
-`/api/alfred/machines` to find the exact name of the machine the human means.
+Still `GET`-only, unchanged: `/api/alfred/kpis`, `/revenue`, `/expenses`,
+`/machines`. `/utilities` and `/maintenance` are `GET` for reading and `POST`
+for the propose/confirm write above — same URL, the method and body decide
+which. Same `X-Alfred-Token` header throughout. Use the `GET`s to check
+current state before proposing — for example, reading `/api/alfred/machines`
+to find the exact name of the machine the human means, or `/api/alfred/utilities`
+to check whether this month's bill was already logged before proposing a
+duplicate.

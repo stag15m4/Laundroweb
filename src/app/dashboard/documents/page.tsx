@@ -89,8 +89,12 @@ export default function DocumentsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this document?")) return;
-    await fetch(`/api/documents/${id}`, { method: "DELETE" });
-    setDocuments((prev) => prev.filter((d) => d.id !== id));
+    const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setDocuments((prev) => prev.filter((d) => d.id !== id));
+    } else {
+      alert("Couldn't delete this document. Please try again.");
+    }
   }
 
   return (

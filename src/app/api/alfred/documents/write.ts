@@ -61,15 +61,21 @@ export async function validateDocumentUpload(body: Record<string, unknown>): Pro
     };
   }
 
-  let size: number;
-  try {
-    size = Buffer.from(fileBase64, "base64").length;
-  } catch {
+  // Buffer.from(..., "base64") is lenient: it silently drops characters
+  // outside the base64 alphabet instead of throwing, so a plain try/catch
+  // around it never actually catches malformed input -- it would decode
+  // garbage bytes from something like "not base64" without complaint. Line
+  // wrapping is tolerated (a common way large base64 is sent), but the
+  // remaining content must be valid base64 with correct padding.
+  const normalized = fileBase64.replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
     return {
       ok: false,
-      response: alfredError(400, "invalid_file", "fileBase64 could not be decoded. Make sure it is valid base64."),
+      response: alfredError(400, "invalid_file", "fileBase64 is not valid base64. Make sure it is the raw base64 encoding of the file, with no other wrapping."),
     };
   }
+
+  const size = Buffer.from(normalized, "base64").length;
   if (size === 0) {
     return { ok: false, response: alfredError(400, "invalid_file", "The decoded file was empty.") };
   }
@@ -86,7 +92,7 @@ export async function validateDocumentUpload(body: Record<string, unknown>): Pro
   return {
     ok: true,
     summary,
-    payload: { name, category, fileName, mimeType, fileBase64 },
+    payload: { name, category, fileName, mimeType, fileBase64: normalized },
   };
 }
 

@@ -65,6 +65,7 @@ model User {
   notes     Note[]
   incidents Incident[]
   devices   TrustedDevice[]
+  documents Document[]
 }
 
 /// A browser that has completed a full password login and been enrolled for
@@ -369,6 +370,25 @@ model ManualDocument {
   fileSize    Int
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+/// General-purpose document storage -- leases, insurance certs, licenses,
+/// policies, and anything else worth keeping on hand but not tied to a
+/// specific machine the way ManualDocument is.
+model Document {
+  id             String   @id @default(cuid())
+  name           String
+  category       String   @default("general")
+  fileName       String
+  mimeType       String
+  fileData       Bytes
+  fileSize       Int
+  uploadedById   String?
+  uploadedBy     User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([category])
 }
 
 model Setting {

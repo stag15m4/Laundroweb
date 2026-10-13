@@ -17,6 +17,7 @@ import {
   Settings,
   LayoutGrid,
   Thermometer,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +40,7 @@ const ownerNav: NavItem[] = [
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/contacts", label: "Contacts", icon: Users },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
+  { href: "/dashboard/documents", label: "Documents", icon: FileText },
   { href: "/dashboard/cameras", label: "Cameras", icon: Camera },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
@@ -48,6 +50,7 @@ const staffNav: NavItem[] = [
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
+  { href: "/dashboard/documents", label: "Documents", icon: FileText },
   { href: "/dashboard/climate", label: "Climate", icon: Thermometer },
   { href: "/dashboard/cameras", label: "Cameras", icon: Camera },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },

@@ -41,6 +41,7 @@ jobs:
       NEXTAUTH_SECRET: ci-secret-not-used-outside-this-run
       NEXTAUTH_URL: http://localhost:3000
       ALFRED_SERVICE_TOKEN: ci-token-not-used-outside-this-run
+      COMPLIANCE_SERVICE_TOKEN: ci-compliance-read-only-token
       SEED_OWNER_PASSWORD: Ci-Owner-4f8a2c9b
       SEED_STAFF_PASSWORD: Ci-Staff-7d1e6a3f
 
@@ -62,6 +63,9 @@ jobs:
       # and server steps below.
       - name: Typecheck
         run: npx tsc --noEmit
+
+      - name: Compliance date tests
+        run: node --import tsx --test tests/compliance.test.ts
 
       - name: Build
         run: npm run build

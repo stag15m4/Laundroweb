@@ -95,6 +95,46 @@ async function main() {
   const anon = await fetch(`${BASE}/api/expenses`);
   check("401 with no session", anon.status === 401, `got ${anon.status}`);
 
+
+  console.log("\nCompliance lifecycle and source isolation:");
+  const ownerHeaders = { cookie: right.cookie, "Content-Type": "application/json", Origin: BASE };
+  const noSession = await fetch(`${BASE}/api/compliance`);
+  check("compliance rejects anonymous requests", noSession.status === 401);
+  const staff = await attemptLogin(STAFF_EMAIL, STAFF_PASSWORD);
+  const forbidden = await fetch(`${BASE}/api/compliance`, { headers: { cookie: staff.cookie } });
+  check("compliance rejects staff access", forbidden.status === 403);
+  const created = await fetch(`${BASE}/api/compliance`, { method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ title: "CI PCI renewal", dueDate: "2027-10-27", deadlineType: "pci_compliance", recurrence: "yearly" }) });
+  check("owner can create a compliance deadline", created.status === 201);
+  const deadline = await created.json();
+  if (deadline.id) {
+    const sourceHeaders = { "X-Compliance-Token": process.env.COMPLIANCE_SERVICE_TOKEN };
+    const readSnapshot = async () => {
+      const res = await fetch(`${BASE}/api/integrations/compliance?tenant_id=laundroweb`, { headers: sourceHeaders });
+      check("dedicated key reads the snapshot", res.status === 200);
+      return res.json();
+    };
+    const initial = await readSnapshot();
+    check("snapshot preserves the civil date", initial.deadlines?.some(d => d.id === deadline.id && d.due_date === "2027-10-27"));
+    const crossBusiness = await fetch(`${BASE}/api/integrations/compliance?tenant_id=another`, { headers: sourceHeaders });
+    check("snapshot rejects another business", crossBusiness.status === 403);
+    const sourceWrite = await fetch(`${BASE}/api/compliance/${deadline.id}`, { method: "PATCH", headers: { ...sourceHeaders, "Content-Type": "application/json", Origin: BASE }, body: JSON.stringify({status:"completed"}) });
+    check("source token cannot write", sourceWrite.status === 401);
+    for (const status of ["completed", "pending", "completed"]) {
+      const changed = await fetch(`${BASE}/api/compliance/${deadline.id}`, { method:"PATCH", headers:ownerHeaders, body:JSON.stringify({status}) });
+      check(`owner status change ${status}`, changed.status === 200);
+    }
+    const completed = await readSnapshot();
+    check("completion reaches the snapshot", completed.deadlines?.some(d => d.id === deadline.id && d.status === "completed"));
+    const renewals = completed.deadlines?.filter(d => d.title === "CI PCI renewal" && d.due_date === "2028-10-27") || [];
+    check("reopen/recomplete creates exactly one renewal", renewals.length === 1);
+    for (const id of [deadline.id, ...renewals.map(d => d.id)]) {
+      await fetch(`${BASE}/api/compliance/${id}`, {method:"DELETE",headers:ownerHeaders});
+    }
+    const removed = await readSnapshot();
+    check("deleted deadline disappears from the snapshot", !removed.deadlines?.some(d => d.id === deadline.id));
+  }
+
   console.log("\nRepeated failures lock the account:");
   for (let i = 0; i < 5; i++) {
     await attemptLogin(STAFF_EMAIL, `wrong-${i}`);

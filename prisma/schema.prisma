@@ -438,3 +438,20 @@ model Camera {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// Civil dates remain YYYY-MM-DD strings so timezone conversion cannot move a deadline.
+model ComplianceDeadline {
+  id            String   @id @default(cuid())
+  title         String
+  notes         String?
+  dueDate       String   @db.VarChar(10)
+  deadlineType  String   @default("other")
+  status        String   @default("pending")
+  recurrence    String   @default("none")
+  completedDate String?  @db.VarChar(10)
+  parentId      String?  @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([dueDate, status])
+}

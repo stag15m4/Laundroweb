@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { contentDisposition } from "@/lib/content-disposition";
 import { prisma } from "@/lib/prisma";
 
 // Documents can be anything an owner uploads -- including an HTML file or an
@@ -32,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return new NextResponse(new Uint8Array(document.fileData), {
     headers: {
       "Content-Type": document.mimeType,
-      "Content-Disposition": `${disposition}; filename="${document.fileName}"`,
+      "Content-Disposition": contentDisposition(disposition, document.fileName),
       // Not cached: this is an authenticated, deletable document, and a stale
       // cache entry could keep serving it on a shared browser after logout
       // or after the document itself has been deleted.

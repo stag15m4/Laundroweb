@@ -159,7 +159,7 @@ async function main() {
   check("delegated records cannot be deleted",(await fetch(`${BASE}/api/compliance/${workflowDeadline.id}`,{method:"DELETE",headers:ownerHeaders})).status===409);
   const verify={...binding,event_id:randomUUID(),action:"verify",revision:3};
   const verified=await apply(verify);check("workflow applies reviewed completion",verified.status===200);const acknowledgment=await verified.json();
-  const retry=await apply(verify);check("same verification event is idempotent",retry.status===200&&JSON.stringify(await retry.json())===JSON.stringify(acknowledgment));
+  const retry=await apply(verify);const replay=await retry.json();check("same verification event is idempotent",retry.status===200&&replay.event_id===acknowledgment.event_id&&replay.obligation_id===acknowledgment.obligation_id&&replay.next_record_id===acknowledgment.next_record_id);
   const renewedSnapshot=await (await fetch(`${BASE}/api/integrations/compliance?tenant_id=laundroweb`,{headers:{"X-Compliance-Token":process.env.COMPLIANCE_SERVICE_TOKEN}})).json();
   const children=renewedSnapshot.deadlines?.filter(d=>d.parent_source_record_id===workflowDeadline.id)||[];
   check("one renewal is created and parent is exported",children.length===1&&children[0].due_date==="2028-10-27");

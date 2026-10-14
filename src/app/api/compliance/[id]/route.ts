@@ -16,6 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const result = await prisma.$transaction(async tx => {
       const old = await tx.complianceDeadline.findUnique({ where: { id } });
       if (!old) return null;
+      if (old.workflowId && (body.status !== undefined || old.status === "completed")) return { verificationRequired: true };
       if (body.status === undefined) return tx.complianceDeadline.update({ where: { id }, data: body });
       const status = body.status as string;
       const updated = await tx.complianceDeadline.update({ where: { id }, data: { status,
@@ -29,6 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       return updated;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    if (result && "verificationRequired" in result) return NextResponse.json({ error: "Submit this duty for owner verification." }, { status: 409 });
     return result ? NextResponse.json(result) : NextResponse.json({ error: "Not found" }, { status: 404 });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") return NextResponse.json({ error: "Deadline changed. Refresh and try again." }, { status: 409 });
@@ -38,6 +40,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await complianceOwner(req); if (denied) return denied;
   const { id } = await params;
-  await prisma.complianceDeadline.deleteMany({ where: { id } });
-  return NextResponse.json({ ok: true });
+  try {
+    const removed = await prisma.$transaction(async tx => {
+      const old = await tx.complianceDeadline.findUnique({ where: { id }, select: { workflowId: true } });
+      if (old?.workflowId) return false;
+      await tx.complianceDeadline.deleteMany({ where: { id } });
+      return true;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    return removed ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "Delegated duties retain their verification history." }, { status: 409 });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") return NextResponse.json({ error: "Deadline changed. Refresh and try again." }, { status: 409 });
+    throw e;
+  }
 }

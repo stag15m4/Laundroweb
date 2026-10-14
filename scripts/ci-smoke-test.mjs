@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID, createHash } from "node:crypto";
 /**
  * End-to-end smoke test run against a live, running instance of the app.
  *
@@ -133,6 +134,42 @@ async function main() {
     }
     const removed = await readSnapshot();
     check("deleted deadline disappears from the snapshot", !removed.deadlines?.some(d => d.id === deadline.id));
+  }
+
+  console.log("\nDelegated compliance verification boundary:");
+  const workflowDeadline = await (await fetch(`${BASE}/api/compliance`, {method:"POST",headers:ownerHeaders,
+    body:JSON.stringify({title:"CI delegated PCI",dueDate:"2027-10-27",deadlineType:"pci_compliance",recurrence:"yearly"})})).json();
+  const peopleRes=await fetch(`${BASE}/api/integrations/compliance/people?tenant_id=laundroweb`,{headers:{"X-Compliance-Token":process.env.COMPLIANCE_SERVICE_TOKEN}});
+  check("people lookup requires the read-only credential",peopleRes.status===200);
+  const people=await peopleRes.json();
+  const worker=people.people?.find(p=>p.name.includes("Staff"));
+  check("staff identity is eligible for assignment",Boolean(worker));
+  const obligation=randomUUID();
+  const binding={version:1,event_id:randomUUID(),obligation_id:obligation,parent_obligation_id:null,revision:1,action:"bind",tenant_id:"laundroweb",record_id:workflowDeadline.id,
+    expected_fingerprint:createHash("sha256").update(JSON.stringify(["CI delegated PCI","2027-10-27","","yearly"])).digest("hex"),owner_name:"CI owner",assignee_id:worker?.id||null,evidence_requirements:"Attach renewal receipt"};
+  const apply=async(payload,token=process.env.COMPLIANCE_WORKFLOW_TOKEN)=>fetch(`${BASE}/api/integrations/compliance/workflow`,{method:"POST",headers:{"Content-Type":"application/json","X-Compliance-Workflow-Token":token},body:JSON.stringify(payload)});
+  check("read-only key cannot bind or verify",(await apply(binding,process.env.COMPLIANCE_SERVICE_TOKEN)).status===401);
+  check("wrong business is rejected",(await apply({...binding,tenant_id:"other"})).status===400);
+  check("changed source fingerprint is rejected",(await apply({...binding,expected_fingerprint:"0".repeat(64)})).status===409);
+  const bound=await apply(binding);check("workflow can bind existing duty",bound.status===200);
+  for(const status of ["completed","cancelled","pending"]){
+    const direct=await fetch(`${BASE}/api/compliance/${workflowDeadline.id}`,{method:"PATCH",headers:ownerHeaders,body:JSON.stringify({status})});
+    check(`legacy ${status} cannot bypass owner verification`,direct.status===409);
+  }
+  check("delegated records cannot be deleted",(await fetch(`${BASE}/api/compliance/${workflowDeadline.id}`,{method:"DELETE",headers:ownerHeaders})).status===409);
+  const verify={...binding,event_id:randomUUID(),action:"verify",revision:3};
+  const verified=await apply(verify);check("workflow applies reviewed completion",verified.status===200);const acknowledgment=await verified.json();
+  const retry=await apply(verify);check("same verification event is idempotent",retry.status===200&&JSON.stringify(await retry.json())===JSON.stringify(acknowledgment));
+  const renewedSnapshot=await (await fetch(`${BASE}/api/integrations/compliance?tenant_id=laundroweb`,{headers:{"X-Compliance-Token":process.env.COMPLIANCE_SERVICE_TOKEN}})).json();
+  const children=renewedSnapshot.deadlines?.filter(d=>d.parent_source_record_id===workflowDeadline.id)||[];
+  check("one renewal is created and parent is exported",children.length===1&&children[0].due_date==="2028-10-27");
+  const editVerified=await fetch(`${BASE}/api/compliance/${workflowDeadline.id}`,{method:"PATCH",headers:ownerHeaders,body:JSON.stringify({title:"Edited verified duty",dueDate:"2027-10-27",deadlineType:"pci_compliance",recurrence:"yearly"})});
+  check("verified details are immutable",editVerified.status===409);
+  if(children[0]){
+    const bypass=await fetch(`${BASE}/api/compliance/${children[0].id}`,{method:"PATCH",headers:ownerHeaders,body:JSON.stringify({status:"completed"})});
+    check("renewal is protected before Legal imports it",bypass.status===409);
+    const childBind={...binding,event_id:randomUUID(),obligation_id:randomUUID(),parent_obligation_id:obligation,record_id:children[0].id,expected_fingerprint:createHash("sha256").update(JSON.stringify(["CI delegated PCI","2028-10-27","","yearly"])).digest("hex")};
+    check("renewal accepts fresh inherited duty binding",(await apply(childBind)).status===200);
   }
 
   console.log("\nRepeated failures lock the account:");

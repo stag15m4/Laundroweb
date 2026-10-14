@@ -1,4 +1,5 @@
 "use client";
+import { ComplianceWorkPanel } from "@/components/ComplianceWorkPanel";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { deadlineTypes, recurrences } from "@/lib/compliance";
 
-type Deadline = { id: string; title: string; notes: string | null; dueDate: string; deadlineType: string; status: string; recurrence: string; };
+type Deadline = { id: string; title: string; notes: string | null; dueDate: string; deadlineType: string; status: string; recurrence: string; workflowId: string | null; };
 const blank = { title: "", notes: "", dueDate: "", deadlineType: "other", recurrence: "none" };
 const label = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 const civil = (date: Date) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
@@ -34,11 +35,12 @@ export default function CompliancePage() {
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save deadline"); return false; }
     finally { setBusy(false); }
   }
-  if (!owner) return <p className="p-6 text-gray-600">Compliance calendar is available to owners.</p>;
+  if (!owner) return <ComplianceWorkPanel tenantId="laundroweb" />;
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
   const count = new Date(month.getFullYear(), month.getMonth()+1, 0).getDate();
   const days = Array.from({ length: Math.ceil((first.getDay()+count)/7)*7 }, (_, i) => i-first.getDay()+1);
   return <div className="space-y-6">
+    <ComplianceWorkPanel tenantId="laundroweb" />
     <div><h1 className="text-2xl font-bold">Compliance calendar</h1><p className="text-gray-500 text-sm mt-1">Track licenses, PCI compliance, insurance, and renewals. Connect this business in Legal to include its deadlines in your central calendar.</p></div>
     {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-700">{error}</p>}
     <Card><CardHeader><div className="flex justify-between items-center gap-2"><Button variant="outline" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth()-1, 1))} aria-label="Previous month">←</Button><CardTitle>{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</CardTitle><Button variant="outline" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth()+1, 1))} aria-label="Next month">→</Button></div></CardHeader><CardContent>
@@ -58,6 +60,6 @@ export default function CompliancePage() {
         <div className="flex gap-2"><Button disabled={busy}>{busy ? "Saving…" : "Save deadline"}</Button>{editing && <Button type="button" variant="outline" onClick={() => {setEditing(null);setForm(blank);}}>Cancel edit</Button>}</div>
       </form>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>All deadlines</CardTitle></CardHeader><CardContent><div className="space-y-3">{deadlines.map(t => <div key={t.id} className="border rounded p-3 flex flex-wrap justify-between gap-3"><div><p className="font-medium">{t.title}</p><p className="text-sm text-gray-500">{t.dueDate} · {label(t.status)} · Repeat: {label(t.recurrence)}</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => {setEditing(t.id);setForm({...t,notes:t.notes || ""});}}>Edit</Button><Button variant="outline" disabled={busy} onClick={() => save(`/api/compliance/${t.id}`,"PATCH",{status:t.status === "completed" ? "pending" : "completed"})}>{t.status === "completed" ? "Reopen" : "Complete"}</Button><Button variant="outline" disabled={busy} onClick={() => save(`/api/compliance/${t.id}`,"PATCH",{status:t.status === "cancelled" ? "pending" : "cancelled"})}>{t.status === "cancelled" ? "Restore" : "Cancel"}</Button><Button variant="outline" disabled={busy} onClick={() => {if (confirm("Delete this deadline? It will also be removed from Legal on the next successful sync.")) save(`/api/compliance/${t.id}`,"DELETE");}}>Delete</Button></div></div>)}{!deadlines.length && <p className="text-gray-500">No compliance deadlines yet.</p>}</div></CardContent></Card>
+    <Card><CardHeader><CardTitle>All deadlines</CardTitle></CardHeader><CardContent><div className="space-y-3">{deadlines.map(t => <div key={t.id} className="border rounded p-3 flex flex-wrap justify-between gap-3"><div><p className="font-medium">{t.title}</p><p className="text-sm text-gray-500">{t.dueDate} · {label(t.status)} · Repeat: {label(t.recurrence)}{t.workflowId && " · Owner verification required"}</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => {setEditing(t.id);setForm({...t,notes:t.notes || ""});}}>Edit</Button><Button variant="outline" disabled={busy || !!t.workflowId} onClick={() => save(`/api/compliance/${t.id}`,"PATCH",{status:t.status === "completed" ? "pending" : "completed"})}>{t.status === "completed" ? "Reopen" : "Complete"}</Button><Button variant="outline" disabled={busy || !!t.workflowId} onClick={() => save(`/api/compliance/${t.id}`,"PATCH",{status:t.status === "cancelled" ? "pending" : "cancelled"})}>{t.status === "cancelled" ? "Restore" : "Cancel"}</Button><Button variant="outline" disabled={busy || !!t.workflowId} onClick={() => {if (confirm("Delete this deadline? It will also be removed from Legal on the next successful sync.")) save(`/api/compliance/${t.id}`,"DELETE");}}>Delete</Button></div></div>)}{!deadlines.length && <p className="text-gray-500">No compliance deadlines yet.</p>}</div></CardContent></Card>
   </div>;
 }

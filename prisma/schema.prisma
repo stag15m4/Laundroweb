@@ -441,6 +441,13 @@ model Camera {
 
 // Civil dates remain YYYY-MM-DD strings so timezone conversion cannot move a deadline.
 model ComplianceDeadline {
+  workflowId String?
+  workflowParentId String?
+  workflowPlaceholder Boolean @default(false)
+  workflowRevision Int @default(0)
+  workflowOwnerName String?
+  workflowAssigneeId String?
+  workflowEvidenceRequirements String?
   id            String   @id @default(cuid())
   title         String
   notes         String?
@@ -454,4 +461,11 @@ model ComplianceDeadline {
   updatedAt     DateTime @updatedAt
 
   @@index([dueDate, status])
+}
+
+model ComplianceWorkflowReceipt {
+  eventId    String @id
+  deadlineId String
+  response   Json
+  createdAt  DateTime @default(now())
 }

@@ -48,6 +48,7 @@ const ownerNav: NavItem[] = [
 ];
 
 const staffNav: NavItem[] = [
+  { href: "/dashboard/compliance", label: "Compliance duties", icon: CalendarDays },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },

@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const rows = await prisma.$transaction(tx => tx.complianceDeadline.findMany({ orderBy: { id: "asc" }, take: 10001 }), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   if (rows.length > 10000) return NextResponse.json({ error: "Compliance snapshot too large" }, { status: 413 });
   return NextResponse.json({ version: 1, complete: true, business_id: "laundroweb", deadlines: rows.map(r => ({
-    id: r.id, title: r.title, notes: r.notes, due_date: r.dueDate, deadline_type: r.deadlineType,
+    id: r.id, parent_source_record_id: r.parentId, title: r.title, notes: r.notes, due_date: r.dueDate, deadline_type: r.deadlineType,
     status: r.status, completed_date: r.completedDate, recurrence: r.recurrence, updated_at: r.updatedAt.toISOString(),
     source_path: "/dashboard/compliance",
   })) }, { headers: { "Cache-Control": "no-store" } });

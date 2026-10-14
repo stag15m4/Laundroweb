@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   Thermometer,
   FileText,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ type NavItem = {
 };
 
 const ownerNav: NavItem[] = [
+  { href: "/dashboard/compliance", label: "Compliance", icon: CalendarDays },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/revenue", label: "Finance", icon: DollarSign, activePaths: FINANCE_PATHS },

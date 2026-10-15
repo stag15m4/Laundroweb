@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/utils";
-import { User, Plus, Pencil, Trash2, KeyRound, Shield, Smartphone, Plug } from "lucide-react";
+import { User, Plus, Pencil, Trash2, KeyRound, Shield, Smartphone, Plug, Store } from "lucide-react";
 
 type UserRecord = {
   id: string;
@@ -218,6 +218,43 @@ export default function SettingsPage() {
     } else {
       const data = await res.json();
       setUserMsg(data.error ?? "Failed to update user.");
+    }
+  }
+
+  // ── Business opening date ──────────────────────────────────────────────
+  const [openDate, setOpenDate] = useState("");
+  const [openDateSaved, setOpenDateSaved] = useState("");
+  const [openDateSaving, setOpenDateSaving] = useState(false);
+  const [openDateMsg, setOpenDateMsg] = useState("");
+
+  useEffect(() => {
+    if (!isOwner) return;
+    fetch("/api/settings?key=business.openDate")
+      .then((r) => r.json())
+      .then((d: { value: string } | null) => {
+        if (d?.value) {
+          setOpenDate(d.value);
+          setOpenDateSaved(d.value);
+        }
+      })
+      .catch(() => undefined);
+  }, [isOwner]);
+
+  async function handleOpenDateSave(e: React.FormEvent) {
+    e.preventDefault();
+    setOpenDateSaving(true);
+    setOpenDateMsg("");
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "business.openDate", value: openDate }),
+    });
+    setOpenDateSaving(false);
+    if (res.ok) {
+      setOpenDateSaved(openDate);
+      setOpenDateMsg("Saved.");
+    } else {
+      setOpenDateMsg("Failed to save.");
     }
   }
 
@@ -497,6 +534,45 @@ export default function SettingsPage() {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Business opening date — owner only. Used to keep the Turns/Day
+            KPI from being diluted by calendar days before the store had any
+            customers. */}
+        {isOwner && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Store className="h-4 w-4" />
+                Business
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleOpenDateSave} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label>Opening Date</Label>
+                  <Input
+                    type="date"
+                    value={openDate}
+                    onChange={(e) => setOpenDate(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-400">
+                    First day open to customers. Reports (Turns/Day) count
+                    elapsed days from here instead of the 1st of the month, so
+                    the days before you opened don&apos;t drag the average down.
+                  </p>
+                </div>
+                {openDateMsg && (
+                  <p className={`text-sm ${openDateMsg === "Saved." ? "text-green-600" : "text-red-600"}`}>
+                    {openDateMsg}
+                  </p>
+                )}
+                <Button type="submit" disabled={openDateSaving || openDate === openDateSaved}>
+                  {openDateSaving ? "Saving…" : "Save"}
+                </Button>
+              </form>
             </CardContent>
           </Card>
         )}

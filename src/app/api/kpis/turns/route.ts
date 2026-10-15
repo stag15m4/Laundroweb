@@ -58,21 +58,25 @@ function monthRange(month: string | null, opened: Date | null) {
   const end = new Date(Date.UTC(year, mon + 1, 1));
   const label = `${year}-${String(mon + 1).padStart(2, "0")}`;
 
-  // Not open yet this month at all -- there's nothing to divide by.
-  if (opened && opened.getTime() >= end.getTime()) {
-    return { start, end, label, days: 0, daysInMonth: 0, partial: true, notYetOpen: true };
-  }
-
   // The store wasn't open for the whole month (either this is the opening
   // month itself, or the opening date just wasn't set until today) -- count
   // elapsed days from the opening date, not the 1st, so turns-per-day isn't
   // diluted by days before there was any business to turn.
   const effectiveStart = opened && opened.getTime() > start.getTime() ? opened : start;
 
+  // No operating days have happened yet in this month: either the opening
+  // date falls in a later month entirely, or (an owner can enter a future
+  // date) it's later this same month than "now" -- either way there's
+  // nothing to divide by, and the one-day floor below would otherwise count
+  // whatever transactions exist before an opening date that hasn't arrived.
+  if (effectiveStart.getTime() >= end.getTime() || effectiveStart.getTime() > now.getTime()) {
+    return { start, end, label, days: 0, daysInMonth: 0, partial: true, notYetOpen: true };
+  }
+
   // Days that have actually happened. Dividing a part-month by its full length
   // would report a quiet store that is really only a few days in.
   const daysInMonth = Math.round((end.getTime() - effectiveStart.getTime()) / 86_400_000);
-  const elapsed = Math.ceil((Date.now() - effectiveStart.getTime()) / 86_400_000);
+  const elapsed = Math.ceil((now.getTime() - effectiveStart.getTime()) / 86_400_000);
   const days = Math.max(1, Math.min(daysInMonth, elapsed));
   const partial = days < daysInMonth;
 

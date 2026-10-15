@@ -469,3 +469,16 @@ model ComplianceWorkflowReceipt {
   response   Json
   createdAt  DateTime @default(now())
 }
+
+/// Short-lived diagnostic alarms. These are deliveries, not unique visitors.
+/// Exact payload retries share a hash; separate alarms may represent one crossing.
+model ProtectWebhookEvent {
+  id           String   @id @default(cuid())
+  deliveryHash String   @unique
+  alarmName    String
+  reportedAt   DateTime
+  receivedAt   DateTime @default(now())
+  payload      Json
+
+  @@index([receivedAt])
+}

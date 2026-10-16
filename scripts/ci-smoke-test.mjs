@@ -172,6 +172,31 @@ async function main() {
     check("renewal accepts fresh inherited duty binding",(await apply(childBind)).status===200);
   }
 
+  console.log("\nProtect diagnostic receiver and owner isolation:");
+  const protectUrl = `${BASE}/api/integrations/protect`;
+  const trafficUrl = `${BASE}/api/cameras/traffic`;
+  const protectHeaders = { "Content-Type": "application/json", "X-Protect-Token": process.env.PROTECT_WEBHOOK_TOKEN };
+  const protectAlarm = { alarm: { name: `CI entrance ${randomUUID()}`, triggers: [{ key: "line", device: "ci-camera" }] }, timestamp: Date.now() };
+  const postAlarm = (body, headers = protectHeaders) => fetch(protectUrl, { method: "POST", headers, body: JSON.stringify(body) });
+  check("receiver rejects missing token", (await postAlarm(protectAlarm, { "Content-Type": "application/json" })).status === 401);
+  check("receiver rejects wrong token", (await postAlarm(protectAlarm, { ...protectHeaders, "X-Protect-Token": "wrong" })).status === 401);
+  check("receiver rejects non-JSON", (await postAlarm(protectAlarm, { ...protectHeaders, "Content-Type": "text/plain" })).status === 415);
+  check("receiver rejects malformed alarm", (await postAlarm({ timestamp: Date.now() })).status === 400);
+  check("receiver rejects malformed JSON", (await fetch(protectUrl, { method: "POST", headers: protectHeaders, body: "{" })).status === 400);
+  check("receiver rejects oversized body", (await postAlarm({ ...protectAlarm, padding: "x".repeat(33000) })).status === 413);
+  check("GET cannot ingest events", (await fetch(protectUrl)).status === 405);
+  const retries = await Promise.all([postAlarm(protectAlarm), postAlarm(protectAlarm)]);
+  check("concurrent first deliveries are accepted", retries.every(r => r.status === 200));
+  check("retry is accepted", (await postAlarm(protectAlarm)).status === 200);
+  check("diagnostics reject anonymous access", (await fetch(trafficUrl)).status === 401);
+  check("diagnostics reject staff access", (await fetch(trafficUrl, { headers: { cookie: staff.cookie } })).status === 403);
+  check("ingestion token cannot read diagnostics", (await fetch(trafficUrl, { headers: protectHeaders })).status === 401);
+  const trafficResponse = await fetch(trafficUrl, { headers: { cookie: right.cookie } });
+  const traffic = await trafficResponse.json();
+  check("owner sees one event after concurrent retries", trafficResponse.status === 200 && traffic.events?.filter(e => e.alarmName === protectAlarm.alarm.name).length === 1);
+  check("diagnostics are not cached", trafficResponse.headers.get("cache-control") === "no-store");
+  check("diagnostics do not return the secret", !JSON.stringify(traffic).includes(process.env.PROTECT_WEBHOOK_TOKEN));
+
   console.log("\nRepeated failures lock the account:");
   for (let i = 0; i < 5; i++) {
     await attemptLogin(STAFF_EMAIL, `wrong-${i}`);

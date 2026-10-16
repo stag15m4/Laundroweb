@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { ProtectTrafficPanel } from "@/components/ProtectTrafficPanel";
 import { Header } from "@/components/layout/Header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -159,6 +160,7 @@ export default function CamerasPage() {
       </Dialog>
 
       <div className="p-6 space-y-4">
+        {isOwner && <ProtectTrafficPanel />}
         {loaded && cameras.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <CameraIcon className="h-12 w-12 text-gray-200 mb-4" />

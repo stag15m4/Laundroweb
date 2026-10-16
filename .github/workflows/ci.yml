@@ -42,6 +42,7 @@ jobs:
       NEXTAUTH_URL: http://localhost:3000
       ALFRED_SERVICE_TOKEN: ci-token-not-used-outside-this-run
       COMPLIANCE_SERVICE_TOKEN: ci-compliance-read-only-token
+      PROTECT_WEBHOOK_TOKEN: ci-protect-token-not-used-outside-this-run
       COMPLIANCE_WORKFLOW_TOKEN: ci-compliance-workflow-write-token
       SEED_OWNER_PASSWORD: Ci-Owner-4f8a2c9b
       SEED_STAFF_PASSWORD: Ci-Staff-7d1e6a3f
@@ -67,6 +68,9 @@ jobs:
 
       - name: Compliance date tests
         run: node --import tsx --test tests/compliance*.test.ts
+
+      - name: Protect receiver tests
+        run: node --import tsx --test tests/protect.test.ts
 
       - name: Build
         run: npm run build

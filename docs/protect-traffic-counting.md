@@ -17,7 +17,7 @@ The token permits only event ingestion. The owner-only GET /api/cameras/traffic 
 - A single arrival and a single departure: confirm actual payload fields, any line identifier and direction, and whether the alarm UI can filter the direction at its source.
 - Two people close together and two people side by side: check whether one alarm combines crossings.
 - Several crossings close together: check Protect alarm cooldown, suppression and rate limits. Never assume one alarm equals one person.
-- Retries: identical JSON payloads are deduplicated by canonical hash with an atomic unique upsert. Different alarms for the same crossing remain separate; there is no identity deduplication.
+- Retries: identical JSON payloads are deduplicated by canonical hash with an atomic unique insert. Different alarms for the same crossing remain separate; there is no identity deduplication.
 - Delivery interruption/restart: this receiver has no historical backfill or proof of camera health. No recent event does not prove the connection is offline or that no one visited.
 - Record manual counts alongside footage, then compare a normal day including baskets/carts and repeat trips. Do not divide bidirectional events by two or label arrivals as unique visitors.
 

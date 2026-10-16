@@ -14,11 +14,11 @@ export async function POST(req: NextRequest) {
   }
   try {
     const alarm = parseProtectAlarm(await readProtectBody(req));
-    // Atomic upsert: simultaneous retries cannot create duplicate deliveries.
+    // Atomic insert: simultaneous retries cannot create duplicate deliveries.
     // Retention cleanup shares the transaction so failures remain retryable.
     await prisma.$transaction([
       prisma.protectWebhookEvent.deleteMany({ where: { receivedAt: { lt: new Date(Date.now() - PROTECT_RETENTION_MS) } } }),
-      prisma.protectWebhookEvent.upsert({ where: { deliveryHash: alarm.deliveryHash }, create: alarm, update: {} }),
+      prisma.protectWebhookEvent.createMany({ data: [alarm], skipDuplicates: true }),
     ]);
     return NextResponse.json({ message: "Protect test event received. Visitor counting is not yet validated." });
   } catch (error) {

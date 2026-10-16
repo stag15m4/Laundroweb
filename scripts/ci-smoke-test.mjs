@@ -185,9 +185,9 @@ async function main() {
   check("receiver rejects malformed JSON", (await fetch(protectUrl, { method: "POST", headers: protectHeaders, body: "{" })).status === 400);
   check("receiver rejects oversized body", (await postAlarm({ ...protectAlarm, padding: "x".repeat(33000) })).status === 413);
   check("GET cannot ingest events", (await fetch(protectUrl)).status === 405);
-  check("valid alarm is accepted", (await postAlarm(protectAlarm)).status === 200);
   const retries = await Promise.all([postAlarm(protectAlarm), postAlarm(protectAlarm)]);
-  check("parallel retries are accepted", retries.every(r => r.status === 200));
+  check("concurrent first deliveries are accepted", retries.every(r => r.status === 200));
+  check("retry is accepted", (await postAlarm(protectAlarm)).status === 200);
   check("diagnostics reject anonymous access", (await fetch(trafficUrl)).status === 401);
   check("diagnostics reject staff access", (await fetch(trafficUrl, { headers: { cookie: staff.cookie } })).status === 403);
   check("ingestion token cannot read diagnostics", (await fetch(trafficUrl, { headers: protectHeaders })).status === 401);

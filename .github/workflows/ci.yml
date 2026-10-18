@@ -72,11 +72,17 @@ jobs:
       - name: Protect receiver tests
         run: node --import tsx --test tests/protect.test.ts
 
+      - name: Phone routing and signature tests
+        run: node --import tsx --test tests/phone.test.ts
+
       - name: Build
         run: npm run build
 
       - name: Apply schema to the CI database
         run: npx prisma db push --accept-data-loss --skip-generate
+
+      - name: Phone webhook and escalation integration tests
+        run: PHONE_TEST_DATABASE_URL="$DATABASE_URL" node --import tsx --test tests/phone.integration.test.ts
 
       - name: Seed known accounts for the smoke test
         run: npx tsx prisma/seed.ts

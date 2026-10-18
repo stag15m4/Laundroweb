@@ -3,6 +3,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+// Most settings (planogram layout, etc.) are per-device UI state any signed-in
+// user can write. A few carry business-wide weight -- changing them should
+// require OWNER, the same bar as the dedicated OWNER-only API routes.
+const OWNER_ONLY_KEYS = new Set(["business.openDate"]);
+
 // GET /api/settings?key=foo         → { key, value } or null
 // GET /api/settings?prefix=foo_     → [{ key, value }, ...]
 export async function GET(req: NextRequest) {
@@ -31,6 +36,9 @@ export async function POST(req: NextRequest) {
   const { key, value } = await req.json();
   if (!key || value === undefined) {
     return NextResponse.json({ error: "key and value required" }, { status: 400 });
+  }
+  if (OWNER_ONLY_KEYS.has(key) && (session.user as { role?: string }).role !== "OWNER") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const setting = await prisma.setting.upsert({
     where: { key },

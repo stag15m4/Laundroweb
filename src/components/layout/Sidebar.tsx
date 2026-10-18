@@ -19,6 +19,7 @@ import {
   Thermometer,
   FileText,
   BookMarked,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,7 @@ type NavItem = {
 };
 
 const ownerNav: NavItem[] = [
+  { href: "/dashboard/compliance", label: "Compliance", icon: CalendarDays },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/manuals", label: "Manuals", icon: BookMarked },
@@ -48,6 +50,7 @@ const ownerNav: NavItem[] = [
 ];
 
 const staffNav: NavItem[] = [
+  { href: "/dashboard/compliance", label: "Compliance duties", icon: CalendarDays },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/manuals", label: "Manuals", icon: BookMarked },

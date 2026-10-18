@@ -14,6 +14,13 @@ export function verifyAlfredToken(req: NextRequest): boolean {
   }
 }
 
+/**
+ * `error` keeps its original value so existing callers are unaffected; the
+ * `message` the integration conventions require is additive.
+ */
 export function alfredUnauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return NextResponse.json(
+    { error: "Unauthorized", message: "Alfred's Laundroweb token is missing or wrong." },
+    { status: 401 }
+  );
 }

@@ -358,18 +358,69 @@ model Note {
   @@index([machineId])
 }
 
+/// A machine or equipment manual. Several can share a machineType (a service
+/// manual and a programming manual for the same washers, say). Neither
+/// machineType nor machineId set means a general manual -- a card reader or
+/// change machine that is not tracked as a Machine.
 model ManualDocument {
   id          String   @id @default(cuid())
   name        String
-  machineType String?  @unique // WASHER/DRYER/VENDING/BUILDING — covers all of that type
+  machineType String?  // WASHER/DRYER/VENDING/BUILDING — covers all of that type
   machineId   String?  @unique // specific machine — for OTHER machines with unique manuals
   machine     Machine? @relation(fields: [machineId], references: [id])
   fileName    String
   mimeType    String   @default("application/pdf")
   fileData    Bytes
   fileSize    Int
+  /// NONE / INDEXING / READY / FAILED. Indexing reads the PDF with Claude and
+  /// fills ManualPage and ManualEntry so the manual can be searched.
+  indexStatus    String    @default("NONE")
+  indexError     String?
+  pageCount      Int?
+  indexedPages   Int       @default(0)
+  indexStartedAt DateTime?
+  indexedAt      DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  pages   ManualPage[]
+  entries ManualEntry[]
+
+  @@index([machineType])
+}
+
+/// A short description of what one page of a manual covers. Used to pick the
+/// right pages to hand Claude when answering a question.
+model ManualPage {
+  id         String         @id @default(cuid())
+  manualId   String
+  manual     ManualDocument @relation(fields: [manualId], references: [id], onDelete: Cascade)
+  pageNumber Int
+  summary    String
+
+  @@unique([manualId, pageNumber])
+}
+
+/// One thing worth looking up in a manual: an error code, a programming
+/// procedure, a setting, or a spec, copied from the page it appears on.
+model ManualEntry {
+  id        String         @id @default(cuid())
+  manualId  String
+  manual    ManualDocument @relation(fields: [manualId], references: [id], onDelete: Cascade)
+  kind      String         // ERROR_CODE / PROCEDURE / SETTING / SPEC
+  code      String?        // exactly as printed, e.g. "E:35" or "OP-CYCL"
+  /// code upper-cased with everything but letters and digits removed, so
+  /// "e 35", "E:35" and "E35" all match
+  codeKey   String?
+  title     String
+  models    String?
+  meaning   String?
+  details   String
+  pageStart Int
+  pageEnd   Int
+
+  @@index([codeKey])
+  @@index([manualId])
 }
 
 /// General-purpose document storage -- leases, insurance certs, licenses,

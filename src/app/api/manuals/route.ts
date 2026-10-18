@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { anthropicConfigured } from "@/lib/anthropic";
-import { indexBacklog, markStaleIndexing, startIndexing } from "@/lib/manual-index";
+import { indexBacklog, isIndexing, markStaleIndexing, startIndexing } from "@/lib/manual-index";
 
 const manualSelect = {
   id: true,
@@ -95,18 +95,29 @@ export async function POST(req: NextRequest) {
     pageCount: null,
     indexedPages: 0,
     indexedAt: null,
+    // Clearing the run id stops any run still working on the old file.
+    indexStartedAt: null,
   };
+
+  const busy = () =>
+    NextResponse.json(
+      { error: "This manual is still being indexed. Replace it once indexing finishes." },
+      { status: 409 }
+    );
 
   let manual;
   if (replaceId) {
     const existing = await prisma.manualDocument.findUnique({ where: { id: replaceId }, select: { id: true } });
     if (!existing) return NextResponse.json({ error: "Manual not found" }, { status: 404 });
+    if (isIndexing(replaceId)) return busy();
     manual = await prisma.$transaction(async (tx) => {
       await tx.manualEntry.deleteMany({ where: { manualId: replaceId } });
       await tx.manualPage.deleteMany({ where: { manualId: replaceId } });
       return tx.manualDocument.update({ where: { id: replaceId }, data, select: manualSelect });
     });
   } else if (machineId) {
+    const current = await prisma.manualDocument.findUnique({ where: { machineId }, select: { id: true } });
+    if (current && isIndexing(current.id)) return busy();
     manual = await prisma.$transaction(async (tx) => {
       const existing = await tx.manualDocument.findUnique({ where: { machineId }, select: { id: true } });
       if (existing) {

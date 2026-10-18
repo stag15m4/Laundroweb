@@ -1,5 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import type Anthropic from "@anthropic-ai/sdk";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { anthropic, describeAnthropicError, FALLBACK_BETA, MANUALS_MODEL } from "@/lib/anthropic";
 import { codeKey } from "@/lib/manual-search";
@@ -27,6 +28,19 @@ const STALE_MS = 45 * 60 * 1000;
 
 const running = new Set<string>();
 let backlogRunning = false;
+
+/**
+ * A run is identified by the indexStartedAt it set. Every write a run makes
+ * is conditional on that value still being current, so a run whose manual
+ * was replaced (which clears indexStartedAt) or re-indexed stops writing
+ * instead of mixing the old file's entries into the new index.
+ */
+class Superseded extends Error {}
+
+/** True while this process is indexing the manual. */
+export function isIndexing(manualId: string): boolean {
+  return running.has(manualId);
+}
 
 const KINDS = ["ERROR_CODE", "PROCEDURE", "SETTING", "SPEC"] as const;
 
@@ -167,6 +181,7 @@ export function indexBacklog(): void {
 }
 
 async function indexManual(manualId: string): Promise<void> {
+  let run: Date | null = null;
   try {
     const manual = await prisma.manualDocument.findUnique({
       where: { id: manualId },
@@ -174,12 +189,13 @@ async function indexManual(manualId: string): Promise<void> {
     });
     if (!manual) return;
 
+    run = new Date();
     await prisma.$transaction([
       prisma.manualEntry.deleteMany({ where: { manualId } }),
       prisma.manualPage.deleteMany({ where: { manualId } }),
       prisma.manualDocument.update({
         where: { id: manualId },
-        data: { indexStatus: "INDEXING", indexError: null, indexedPages: 0, indexStartedAt: new Date(), indexedAt: null },
+        data: { indexStatus: "INDEXING", indexError: null, indexedPages: 0, indexStartedAt: run, indexedAt: null },
       }),
     ]);
 
@@ -194,7 +210,8 @@ async function indexManual(manualId: string): Promise<void> {
       throw new Error("This PDF could not be opened. It may be damaged or password-protected.");
     }
     const pageCount = source.getPageCount();
-    await prisma.manualDocument.update({ where: { id: manualId }, data: { pageCount } });
+    const thisRun = run;
+    await claim(manualId, thisRun, { pageCount });
 
     const chunks: [number, number][] = [];
     for (let first = 1; first <= pageCount; first += CHUNK_PAGES) {
@@ -202,24 +219,45 @@ async function indexManual(manualId: string): Promise<void> {
     }
 
     let next = 0;
+    let stopped = false;
     const worker = async () => {
-      while (next < chunks.length) {
+      while (!stopped && next < chunks.length) {
         const [first, last] = chunks[next++];
-        await indexRange(manualId, manual.name, source, first, last);
+        try {
+          await indexRange(manualId, thisRun, manual.name, source, first, last);
+        } catch (err) {
+          stopped = true; // no point spending on chunks of a run that has failed
+          throw err;
+        }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, chunks.length) }, worker));
+    // allSettled, not all: the run is only released (and so restartable)
+    // once every worker has stopped writing.
+    const results = await Promise.allSettled(Array.from({ length: Math.min(CONCURRENCY, chunks.length) }, worker));
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failed) throw failed.reason;
 
-    await prisma.manualDocument.update({
-      where: { id: manualId },
-      data: { indexStatus: "READY", indexedAt: new Date(), indexedPages: pageCount },
-    });
+    await claim(manualId, thisRun, { indexStatus: "READY", indexedAt: new Date(), indexedPages: pageCount });
   } catch (err) {
+    if (err instanceof Superseded) return;
     console.error(`[manual-index] ${manualId} failed:`, err);
+    // Conditional, so a stale run never marks a replacement file FAILED.
     await prisma.manualDocument
-      .update({ where: { id: manualId }, data: { indexStatus: "FAILED", indexError: describeAnthropicError(err) } })
+      .updateMany({
+        where: { id: manualId, indexStatus: "INDEXING", ...(run ? { indexStartedAt: run } : {}) },
+        data: { indexStatus: "FAILED", indexError: describeAnthropicError(err) },
+      })
       .catch(() => {});
   }
+}
+
+/** Update the manual only if this run is still the current one. */
+async function claim(manualId: string, run: Date, data: Prisma.ManualDocumentUpdateManyMutationInput, tx: Prisma.TransactionClient = prisma) {
+  const { count } = await tx.manualDocument.updateMany({
+    where: { id: manualId, indexStartedAt: run, indexStatus: "INDEXING" },
+    data,
+  });
+  if (count === 0) throw new Superseded();
 }
 
 /** Copy pages first..last (1-based, inclusive) of a PDF into a new PDF. */
@@ -238,17 +276,17 @@ function range(first: number, last: number): number[] {
  * Index one run of pages. A run that is too big for one request, or whose
  * answer is cut off, is split in half and each half retried.
  */
-async function indexRange(manualId: string, manualName: string, source: PDFDocument, first: number, last: number) {
+async function indexRange(manualId: string, run: Date, manualName: string, source: PDFDocument, first: number, last: number) {
   const bytes = await slicePdf(source, range(first, last));
 
   if (bytes.length > MAX_CHUNK_BYTES) {
     if (first === last) {
-      await savePages(manualId, first, last, { pages: [{ page: first, summary: "(Page too large to index -- open the PDF to read it.)" }], entries: [] });
+      await savePages(manualId, run, first, last, { pages: [{ page: first, summary: "(Page too large to index -- open the PDF to read it.)" }], entries: [] });
       return;
     }
     const mid = Math.floor((first + last) / 2);
-    await indexRange(manualId, manualName, source, first, mid);
-    await indexRange(manualId, manualName, source, mid + 1, last);
+    await indexRange(manualId, run, manualName, source, first, mid);
+    await indexRange(manualId, run, manualName, source, mid + 1, last);
     return;
   }
 
@@ -256,11 +294,11 @@ async function indexRange(manualId: string, manualName: string, source: PDFDocum
   if (result === "too_long") {
     if (first === last) throw new Error(`Page ${first} has more content than one request can return.`);
     const mid = Math.floor((first + last) / 2);
-    await indexRange(manualId, manualName, source, first, mid);
-    await indexRange(manualId, manualName, source, mid + 1, last);
+    await indexRange(manualId, run, manualName, source, first, mid);
+    await indexRange(manualId, run, manualName, source, mid + 1, last);
     return;
   }
-  await savePages(manualId, first, last, result);
+  await savePages(manualId, run, first, last, result);
 }
 
 async function extract(manualName: string, pdf: Uint8Array, first: number, last: number): Promise<Extracted | "too_long"> {
@@ -305,7 +343,7 @@ async function extract(manualName: string, pdf: Uint8Array, first: number, last:
   }
 }
 
-async function savePages(manualId: string, first: number, last: number, data: Extracted) {
+async function savePages(manualId: string, run: Date, first: number, last: number, data: Extracted) {
   const clamp = (n: number) => Math.min(Math.max(Math.round(n) || first, first), last);
   const pages = new Map<number, string>();
   for (const p of data.pages) {
@@ -332,15 +370,12 @@ async function savePages(manualId: string, first: number, last: number, data: Ex
       };
     });
 
-  await prisma.$transaction([
-    prisma.manualPage.createMany({
+  await prisma.$transaction(async (tx) => {
+    await claim(manualId, run, { indexedPages: { increment: last - first + 1 } }, tx);
+    await tx.manualPage.createMany({
       data: [...pages].map(([pageNumber, summary]) => ({ manualId, pageNumber, summary })),
       skipDuplicates: true,
-    }),
-    prisma.manualEntry.createMany({ data: entries }),
-    prisma.manualDocument.update({
-      where: { id: manualId },
-      data: { indexedPages: { increment: last - first + 1 } },
-    }),
-  ]);
+    });
+    await tx.manualEntry.createMany({ data: entries });
+  });
 }

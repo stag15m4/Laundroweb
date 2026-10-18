@@ -76,7 +76,11 @@ export async function lookupEntries(query: string, scope: Prisma.ManualDocumentW
       select: entrySelect,
       take: 200,
     });
-    const loose = digits ? new RegExp(`^[A-Z]{0,4}0*${digits}$`) : null;
+    // A bare number may match a code printed with a prefix ("35" finds
+    // "E:35"), but a prefix that was typed must be honoured: "E35" finds
+    // "E:35", "E035" and a bare "35" -- never "F35" or "DR35".
+    const prefix = key.match(/^([A-Z]*)\d+$/)?.[1] ?? "";
+    const loose = digits ? new RegExp(prefix ? `^(?:${prefix})?0*${digits}$` : `^[A-Z]{0,4}0*${digits}$`) : null;
     const exact = candidates.filter((e) => e.codeKey === key);
     const near = candidates.filter((e) => e.codeKey !== key && loose && e.codeKey && loose.test(e.codeKey));
     for (const e of [...exact, ...near]) {

@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   Thermometer,
   FileText,
+  BookMarked,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ type NavItem = {
 const ownerNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
+  { href: "/dashboard/manuals", label: "Manuals", icon: BookMarked },
   { href: "/dashboard/revenue", label: "Finance", icon: DollarSign, activePaths: FINANCE_PATHS },
   { href: "/dashboard/vending", label: "Vending", icon: ShoppingBag },
   { href: "/dashboard/climate", label: "Climate", icon: Thermometer },
@@ -48,6 +50,7 @@ const ownerNav: NavItem[] = [
 const staffNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
+  { href: "/dashboard/manuals", label: "Manuals", icon: BookMarked },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/documents", label: "Documents", icon: FileText },

@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import { Header } from "@/components/layout/Header";
 import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { buildServiceHistoryPdf, type HistoryResponse } from "@/lib/service-history-pdf";
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import {
+  Search,
   WashingMachine,
   Wind,
   ShoppingCart,
@@ -628,12 +630,14 @@ function MachineDetailModal({
     fd.append("name", file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "));
     if (isBuilding2) {
       fd.append("machineType", "BUILDING");
+      if (manual) fd.append("replaceId", manual.id);
     } else if (["OTHER", "VENDING", "WATER_HEATER", "AIR_CONDITIONER"].includes(machine!.type)) {
       // machine-specific — these types can have unique manuals per unit
       fd.append("machineId", machine!.id);
     } else {
       // WASHER / DRYER — one manual covers all units of that type
       fd.append("machineType", machine!.type);
+      if (manual) fd.append("replaceId", manual.id);
     }
     const res = await fetch("/api/manuals", { method: "POST", body: fd });
     if (res.ok) {
@@ -869,6 +873,15 @@ function MachineDetailModal({
                       <BookOpen className="h-3.5 w-3.5 mr-1.5" />
                       {manual.name}
                     </Button>
+                  )}
+                  {machine && (
+                    <Link
+                      href={`/dashboard/manuals?machine=${machine.id}`}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                    >
+                      <Search className="h-3.5 w-3.5 mr-1.5" />
+                      Look Up Code
+                    </Link>
                   )}
                 </div>
               )}

@@ -396,3 +396,90 @@ logged before proposing a duplicate.
 `/api/alfred/documents/:id/file` is the one exception to "read endpoints
 return JSON" — it returns the raw file, not a JSON envelope. See
 [Reading documents](#reading-documents) above.
+
+## Manuals (read-only)
+
+Equipment manuals uploaded on the Manuals page are indexed by Claude: every
+error code, procedure, setting and spec is stored with the page it appears
+on. Alfred has four reads and no writes here. Every error is the usual
+`{ error, message }` JSON body.
+
+Narrow any of the search endpoints with **one** of:
+
+- `machine` — a machine name, serial or id, resolved exactly like the machine
+  writes. An ambiguous name is a `409 ambiguous_machine` with `candidates`;
+  ask which one. A machine searches its own manual, its type's manuals, and
+  the general manuals (card readers, change machine).
+- `type` — `WASHER`, `DRYER`, `VENDING`, `WATER_HEATER`, `AIR_CONDITIONER`,
+  `PLUMBING_DEVICE`, `OTHER` or `BUILDING`, for "the dryers" in general.
+
+### `GET /api/alfred/manuals`
+
+```json
+{
+  "message": "3 manuals on file.",
+  "searchEnabled": true,
+  "manuals": [
+    { "id": "…", "name": "Huebsch Dryer Service Manual", "covers": "all dryers",
+      "pageCount": 120, "indexStatus": "READY", "entryCount": 214, "…": "…" }
+  ]
+}
+```
+
+`indexStatus` is `NONE`, `INDEXING`, `READY` or `FAILED` (with `indexError`).
+Only indexed manuals are searchable.
+
+### `GET /api/alfred/manuals/lookup?q=E35&machine=D45-1`
+
+Exact lookup, database only, instant. Codes match regardless of case,
+punctuation, leading zeros or a missing letter prefix (`35` finds `E:35`);
+any query also matches words in titles and descriptions. `400 missing_query`
+without `q`.
+
+```json
+{
+  "message": "1 match for \"E35\" in the manuals for D45-1 (dryer).",
+  "results": [
+    { "kind": "ERROR_CODE", "code": "E:35", "title": "Door lock failure",
+      "meaning": "…", "details": "…causes and fix as printed…", "models": "…",
+      "pageStart": 22, "pageEnd": 22, "manualId": "…", "manualName": "…",
+      "match": "code" }
+  ]
+}
+```
+
+`kind` is `ERROR_CODE`, `PROCEDURE`, `SETTING` or `SPEC`. `match` is `code`
+for a code match, `text` for a word match.
+
+### `GET /api/alfred/manuals/ask?q=how+do+I+change+the+cycle+time&type=DRYER`
+
+Answers from the manual pages themselves, with each statement followed by its
+source. It calls Claude twice — allow up to a minute.
+
+```json
+{
+  "message": "Answered from the manuals.",
+  "answer": "Press and hold … [Huebsch Dryer Programming Manual p.34]",
+  "citations": [{ "manualId": "…", "manualName": "…", "page": 34, "endPage": 34, "citedText": "…" }],
+  "pagesRead": [{ "manualId": "…", "manualName": "…", "pages": [33, 34] }]
+}
+```
+
+| Status | `error` | Meaning |
+|---|---|---|
+| `404` | `not_in_manuals` | The manuals don't cover it, or none are indexed; `message` says which |
+| `503` | `search_not_configured` | No Anthropic API key in Laundroweb yet |
+| `502` | `search_failed` | The Claude call failed; `message` says why |
+
+### `GET /api/alfred/manuals/:id/file?pages=34,35`
+
+**Raw PDF bytes**, not JSON. Without `pages`, the whole manual; with `pages`
+(`34`, `34,35` or `33-36`, at most 20), a small PDF of just those pages — the
+way to look at a cited page, diagrams included. `400 invalid_pages` /
+`too_many_pages` / `not_a_pdf`, `404 not_found`.
+
+### Known difference
+
+Before this change, a missing or wrong token returned `{ "error":
+"Unauthorized" }` with no `message`. Every Alfred endpoint now also returns
+`"message"` on that 401; `error` is unchanged.

@@ -45,6 +45,8 @@ type Entry = {
   match: "code" | "text";
 };
 
+type DocumentRow = { id: string; name: string; mimeType: string };
+
 type Citation = { manualId: string; manualName: string; page: number; endPage: number; citedText: string };
 type AskResponse =
   | { ok: true; segments: { text: string; citations: Citation[] }[]; consulted: { manualId: string; manualName: string; pages: number[] }[] }
@@ -117,6 +119,9 @@ function ManualsPageInner() {
   const [name, setName] = useState("");
   const [covers, setCovers] = useState("WASHER");
   const [file, setFile] = useState<File | null>(null);
+  const [sourceKind, setSourceKind] = useState<"upload" | "document">("upload");
+  const [documents, setDocuments] = useState<DocumentRow[]>([]);
+  const [documentId, setDocumentId] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -131,6 +136,14 @@ function ManualsPageInner() {
     fetch("/api/equipment").then((r) => r.json()).then(setMachines);
     loadManuals();
   }, [loadManuals]);
+
+  // PDFs already saved under Documents can be linked instead of re-uploaded.
+  useEffect(() => {
+    if (!open || !isOwner) return;
+    fetch("/api/documents")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: DocumentRow[]) => setDocuments(rows.filter((d) => d.mimeType === "application/pdf")));
+  }, [open, isOwner]);
 
   // Keep indexing progress live.
   const anyIndexing = manuals.some((m) => m.indexStatus === "INDEXING");
@@ -182,12 +195,13 @@ function ManualsPageInner() {
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) return;
+    if (sourceKind === "upload" ? !file : !documentId) return;
     setUploading(true);
     setUploadError(null);
     const fd = new FormData();
     fd.set("name", name);
-    fd.set("file", file);
+    if (sourceKind === "upload") fd.set("file", file!);
+    else fd.set("documentId", documentId);
     if (covers.startsWith("machine:")) fd.set("machineId", covers.slice("machine:".length));
     else if (covers !== "GENERAL") fd.set("machineType", covers);
     const res = await fetch("/api/manuals", { method: "POST", body: fd });
@@ -196,6 +210,7 @@ function ManualsPageInner() {
       setOpen(false);
       setName("");
       setFile(null);
+      setDocumentId("");
       loadManuals();
     } else {
       const body = await res.json().catch(() => null);
@@ -230,14 +245,14 @@ function ManualsPageInner() {
         {isOwner && (
           <Button onClick={() => setOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Upload Manual
+            Add Manual
           </Button>
         )}
       </Header>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Upload Manual</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Add Manual</DialogTitle></DialogHeader>
           <form onSubmit={handleUpload} className="space-y-4">
             <div className="space-y-1.5">
               <Label>Name</Label>
@@ -262,14 +277,43 @@ function ManualsPageInner() {
             </div>
             <div className="space-y-1.5">
               <Label>PDF</Label>
-              <Input type="file" accept=".pdf,application/pdf" required onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
+                {([["upload", "Upload a file"], ["document", "From Documents"]] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setSourceKind(k)}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${sourceKind === k ? "bg-white shadow-sm text-gray-900" : "text-gray-500"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {sourceKind === "upload" ? (
+                <Input type="file" accept=".pdf,application/pdf" required onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              ) : documents.length === 0 ? (
+                <p className="text-sm text-gray-500">No PDFs on the Documents page.</p>
+              ) : (
+                <Select
+                  value={documentId}
+                  onValueChange={(v) => {
+                    setDocumentId(v);
+                    if (!name) setName(documents.find((d) => d.id === v)?.name ?? "");
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Choose a document" /></SelectTrigger>
+                  <SelectContent>
+                    {documents.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <p className="text-xs text-gray-500">
               After upload, Claude reads the whole manual and indexes every code and procedure. That takes a few minutes for a long manual; you can leave the page.
             </p>
             {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
-            <Button type="submit" className="w-full" disabled={uploading}>
-              {uploading ? "Uploading..." : "Upload"}
+            <Button type="submit" className="w-full" disabled={uploading || (sourceKind === "document" && !documentId)}>
+              {uploading ? "Saving..." : "Add Manual"}
             </Button>
           </form>
         </DialogContent>
@@ -413,7 +457,7 @@ function ManualsPageInner() {
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Loaded manuals</p>
           {manuals.length === 0 ? (
             <p className="text-sm text-gray-400">
-              No manuals yet.{isOwner && " Upload one above."}
+              No manuals yet.{isOwner && " Add one above."}
             </p>
           ) : (
             manuals.map((m) => (

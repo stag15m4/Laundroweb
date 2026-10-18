@@ -10,8 +10,13 @@ export function codeKey(code: string): string {
  * Which manuals apply. A machine sees its own manual, the manuals for its
  * type, and the general manuals; a manual id narrows to that one manual.
  */
-export async function manualScope(opts: { machineId?: string | null; manualId?: string | null }): Promise<Prisma.ManualDocumentWhereInput> {
+export async function manualScope(opts: {
+  machineId?: string | null;
+  manualId?: string | null;
+  machineType?: string | null;
+}): Promise<Prisma.ManualDocumentWhereInput> {
   if (opts.manualId) return { id: opts.manualId };
+  if (opts.machineType) return { OR: [{ machineType: opts.machineType }, { machineType: null, machineId: null }] };
   if (opts.machineId) {
     const machine = await prisma.machine.findUnique({ where: { id: opts.machineId }, select: { id: true, type: true } });
     if (machine) {

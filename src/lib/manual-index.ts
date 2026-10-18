@@ -26,6 +26,7 @@ const CONCURRENCY = 3;
 const STALE_MS = 45 * 60 * 1000;
 
 const running = new Set<string>();
+let backlogRunning = false;
 
 const KINDS = ["ERROR_CODE", "PROCEDURE", "SETTING", "SPEC"] as const;
 
@@ -123,9 +124,46 @@ export async function markStaleIndexing(): Promise<void> {
 /** Start indexing in the background. Returns false if this manual is already being indexed. */
 export function startIndexing(manualId: string): boolean {
   if (running.has(manualId)) return false;
-  running.add(manualId);
-  void indexManual(manualId).finally(() => running.delete(manualId));
+  void runIndexing(manualId);
   return true;
+}
+
+async function runIndexing(manualId: string): Promise<void> {
+  running.add(manualId);
+  try {
+    await indexManual(manualId);
+  } finally {
+    running.delete(manualId);
+  }
+}
+
+/**
+ * Index, one at a time, every PDF manual that has never been indexed --
+ * manuals uploaded before indexing existed, or while no API key was set.
+ * Safe to call often: it returns at once if a backlog run is under way.
+ */
+export function indexBacklog(): void {
+  if (backlogRunning) return;
+  backlogRunning = true;
+  void (async () => {
+    try {
+      const tried = new Set<string>();
+      for (;;) {
+        const next = await prisma.manualDocument.findFirst({
+          where: { indexStatus: "NONE", mimeType: "application/pdf", id: { notIn: [...tried, ...running] } },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        if (!next) break;
+        tried.add(next.id);
+        await runIndexing(next.id);
+      }
+    } catch (err) {
+      console.error("[manual-index] backlog run failed:", err);
+    } finally {
+      backlogRunning = false;
+    }
+  })();
 }
 
 async function indexManual(manualId: string): Promise<void> {

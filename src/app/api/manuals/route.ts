@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { anthropicConfigured } from "@/lib/anthropic";
-import { markStaleIndexing, startIndexing } from "@/lib/manual-index";
+import { indexBacklog, markStaleIndexing, startIndexing } from "@/lib/manual-index";
 
 const manualSelect = {
   id: true,
@@ -26,6 +26,9 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await markStaleIndexing();
+  // Manuals uploaded before indexing existed (or before the key was set)
+  // get picked up here, so nothing has to be re-uploaded.
+  if (anthropicConfigured()) indexBacklog();
   const manuals = await prisma.manualDocument.findMany({
     select: manualSelect,
     orderBy: { name: "asc" },
@@ -41,6 +44,9 @@ const MAX_BYTES = 60 * 1024 * 1024; // 60 MB
  * machineType or general upload adds a new manual, since one machine type can
  * have several (service, programming, parts). PDFs are indexed in the
  * background when an Anthropic key is configured.
+ *
+ * Instead of a file, documentId links a PDF already saved under Documents:
+ * its bytes are copied in, so deleting either one leaves the other intact.
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -53,22 +59,37 @@ export async function POST(req: NextRequest) {
   const machineType = (formData.get("machineType") as string) || null;
   const machineId = (formData.get("machineId") as string) || null;
   const replaceId = (formData.get("replaceId") as string) || null;
+  const documentId = (formData.get("documentId") as string) || null;
   const file = formData.get("file") as File | null;
 
-  if (!file || !name) {
+  if ((!file && !documentId) || !name) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "File too large (max 60 MB)" }, { status: 413 });
+
+  let source: { fileName: string; mimeType: string; bytes: Buffer };
+  if (documentId) {
+    const doc = await prisma.document.findUnique({
+      where: { id: documentId },
+      select: { fileName: true, mimeType: true, fileData: true },
+    });
+    if (!doc) return NextResponse.json({ error: "That document no longer exists" }, { status: 404 });
+    if (doc.mimeType !== "application/pdf") {
+      return NextResponse.json({ error: "Only PDF documents can be used as manuals" }, { status: 400 });
+    }
+    source = { fileName: doc.fileName, mimeType: doc.mimeType, bytes: Buffer.from(doc.fileData) };
+  } else {
+    if (file!.size > MAX_BYTES) {
+      return NextResponse.json({ error: "File too large (max 60 MB)" }, { status: 413 });
+    }
+    source = { fileName: file!.name, mimeType: file!.type || "application/pdf", bytes: Buffer.from(await file!.arrayBuffer()) };
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
   const data = {
     name,
-    fileName: file.name,
-    mimeType: file.type || "application/pdf",
-    fileData: buffer,
-    fileSize: buffer.length,
+    fileName: source.fileName,
+    mimeType: source.mimeType,
+    fileData: source.bytes,
+    fileSize: source.bytes.length,
     indexStatus: "NONE",
     indexError: null,
     pageCount: null,

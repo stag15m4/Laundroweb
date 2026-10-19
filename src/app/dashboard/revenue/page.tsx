@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
+import { CollectQuartersDialog } from "@/components/revenue/CollectQuartersDialog";
 import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,9 @@ type RevenueEntry = {
 type Machine = { id: string; name: string; type: string };
 
 export default function RevenuePage() {
+  const { data: session } = useSession();
+  const isOwner = (session?.user as { role?: string })?.role === "OWNER";
+
   const [entries, setEntries] = useState<RevenueEntry[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [open, setOpen] = useState(false);
@@ -41,8 +46,12 @@ export default function RevenuePage() {
     collectedBy: "",
   });
 
-  useEffect(() => {
+  function refreshEntries() {
     fetch("/api/revenue").then((r) => r.json()).then(setEntries);
+  }
+
+  useEffect(() => {
+    refreshEntries();
     fetch("/api/equipment").then((r) => r.json()).then(setMachines);
   }, []);
 
@@ -84,7 +93,9 @@ export default function RevenuePage() {
   return (
     <div>
       <Header title="Revenue" description="Track coin vault collections and card payments">
-        <Dialog open={open} onOpenChange={setOpen}>
+        <div className="flex items-center gap-2">
+          {isOwner && <CollectQuartersDialog onSaved={refreshEntries} />}
+          <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
@@ -156,7 +167,8 @@ export default function RevenuePage() {
               <Button type="submit" className="w-full">Save Entry</Button>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </Header>
 
       <PageTabs tabs={[

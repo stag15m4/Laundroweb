@@ -124,7 +124,12 @@ export async function GET(req: NextRequest) {
     }),
     prisma.revenueEntry.findMany({
       where: { date: { gte: start, lt: end } },
-      select: { amount: true, machineType: true, machine: { select: { id: true, type: true } } },
+      select: {
+        amount: true,
+        machineType: true,
+        excludesFascardMachines: true,
+        machine: { select: { id: true, type: true } },
+      },
     }),
     prisma.machineModelPricing.findMany({ where: { machineType: "WASHER" } }),
   ]);
@@ -188,7 +193,10 @@ export async function GET(req: NextRequest) {
   // are already counted via measuredTurns, and there's no way to know how
   // much of an unattributed total is its share -- so rather than guess (and
   // risk counting the same machine's turns twice), that revenue is left out
-  // of the estimate and reported separately instead.
+  // of the estimate and reported separately instead. The one exception is an
+  // entry explicitly flagged excludesFascardMachines -- e.g. the quarter
+  // collection tool's weighed-coin total, which by construction covers only
+  // the unmapped machines and carries no such ambiguity.
   let ambiguousWasherRevenue = 0;
 
   for (const entry of entries) {
@@ -200,7 +208,7 @@ export async function GET(req: NextRequest) {
       if (machineId !== null) {
         if (unmappedIds.has(machineId)) unmappedWasherRevenue += amount;
         // else: a specific mapped washer -- already counted via measuredTurns
-      } else if (mappedWashers.length === 0) {
+      } else if (mappedWashers.length === 0 || entry.excludesFascardMachines) {
         unmappedWasherRevenue += amount;
       } else {
         ambiguousWasherRevenue += amount;

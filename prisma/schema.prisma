@@ -215,6 +215,13 @@ model RevenueEntry {
   // machine — a coin pull from "the washers". Without this, a lump collection
   // cannot be attributed, and turns per day has nothing to divide.
   machineType MachineType?
+  // True only when this lump entry is known to exclude every FasCard-mapped
+  // machine of machineType -- e.g. a weighed-coin collection that
+  // deliberately covers just the non-reader washers. Turns-per-day uses this
+  // to count it as unmapped-machine revenue instead of ambiguous revenue;
+  // a plain "coin pull from the washers" entry (source unknown whether it
+  // included mapped machines) must leave this false.
+  excludesFascardMachines Boolean @default(false)
   notes       String?
   collectedBy String?
   createdAt   DateTime      @default(now())

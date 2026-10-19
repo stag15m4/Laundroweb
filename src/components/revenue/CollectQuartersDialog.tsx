@@ -48,6 +48,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
   const [savedSummary, setSavedSummary] = useState<{ washerTotal: number; dryerTotal: number } | null>(null);
 
   async function fetchPreview(start: string, end: string) {
@@ -77,6 +78,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
 
     setSavedSummary(null);
     setSaveError("");
+    setOverlapWarning(null);
     setWasherWeight(emptyWeight);
     setDryerWeight(emptyWeight);
     setChangerCash("");
@@ -96,9 +98,10 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
     fetchPreview(start, end);
   }
 
-  async function handleSave() {
+  async function handleSave(confirmOverlap = false) {
     setSaving(true);
     setSaveError("");
+    setOverlapWarning(null);
     try {
       const res = await fetch("/api/revenue/collect", {
         method: "POST",
@@ -110,11 +113,18 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
           dryerCoinWeight: dryerWeight.value ? { value: Number(dryerWeight.value), unit: dryerWeight.unit } : null,
           changerCash: changerCash ? Number(changerCash) : null,
           collectedBy: collectedBy || null,
+          confirmOverlap,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setSaveError(data.error ?? "Failed to save this collection.");
+        if (data.error === "period_overlap") {
+          setOverlapWarning(data.message);
+        } else if (data.error === "concurrent_save") {
+          setSaveError(data.message);
+        } else {
+          setSaveError(data.message ?? data.error ?? "Failed to save this collection.");
+        }
         return;
       }
       setSavedSummary(data.summary);
@@ -297,9 +307,34 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
 
             {saveError && <p className="text-sm text-red-600">{saveError}</p>}
 
-            <Button className="w-full" onClick={handleSave} disabled={saving || nothingToSave}>
-              {saving ? "Saving…" : "Save Collection"}
-            </Button>
+            {overlapWarning ? (
+              <div className="space-y-2 rounded-md bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                <p>{overlapWarning} Saving anyway will record this period's revenue a second time.</p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setOverlapWarning(null)}
+                    disabled={saving}
+                  >
+                    Go back
+                  </Button>
+                  <Button
+                    type="button"
+                    className="flex-1"
+                    onClick={() => handleSave(true)}
+                    disabled={saving}
+                  >
+                    {saving ? "Saving…" : "Save Anyway"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button className="w-full" onClick={() => handleSave(false)} disabled={saving || nothingToSave}>
+                {saving ? "Saving…" : "Save Collection"}
+              </Button>
+            )}
           </div>
         )}
       </DialogContent>

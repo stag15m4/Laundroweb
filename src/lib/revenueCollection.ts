@@ -81,7 +81,23 @@ export async function fascardCategoryTotals(
   const dryer = emptyCategory();
 
   try {
-    const { transactions } = await fascardRecentTransactions(sinceUTC, untilUTC);
+    const { transactions, diagnostics } = await fascardRecentTransactions(sinceUTC, untilUTC);
+
+    // A capped fetch means the walk back through FasCard's pages stopped
+    // before reaching sinceUTC -- the transactions returned are an unknown
+    // subset of what actually happened in the window, not an empty tail.
+    // Saving totals built from that would silently under-report revenue and
+    // (worse) advance the collection cursor past dates that were never
+    // actually fully counted. Treat it as a hard failure instead: the caller
+    // needs a narrower date range, not a partial answer.
+    if (diagnostics.hitPageCap) {
+      return {
+        configured: true,
+        error: `FasCard returned too many transactions to walk back to ${sinceUTC.toISOString().slice(0, 10)} (hit the ${diagnostics.pagesFetched}-page safety cap). Try a shorter date range.`,
+        washer: emptyCategory(),
+        dryer: emptyCategory(),
+      };
+    }
 
     const perMachine = new Map<number, { cash: number; card: number }>();
     for (const t of transactions) {

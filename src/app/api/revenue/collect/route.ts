@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { coinWeightToDollars, fascardCategoryTotals, WeightUnit } from "@/lib/revenueCollection";
+
+class PeriodOverlapError extends Error {
+  constructor(public lastCollectionEnd: string) {
+    super(`This period starts before your last saved collection ended (${lastCollectionEnd}).`);
+  }
+}
 
 type Weight = { value: number; unit: WeightUnit };
 
@@ -60,6 +67,7 @@ export async function POST(req: NextRequest) {
   }
 
   const collectedBy = typeof body.collectedBy === "string" && body.collectedBy.trim() ? body.collectedBy.trim() : null;
+  const confirmOverlap = body.confirmOverlap === true;
 
   const fascard = await fascardCategoryTotals(periodStart, periodEnd);
   if (fascard.error) {
@@ -82,6 +90,7 @@ export async function POST(req: NextRequest) {
     machineType: "WASHER" | "DRYER";
     notes: string;
     collectedBy: string | null;
+    excludesFascardMachines?: boolean;
   }[] = [];
 
   if (fascard.washer.cash > 0) {
@@ -112,6 +121,7 @@ export async function POST(req: NextRequest) {
       machineType: "WASHER",
       notes: `Weighed coin collection, non-FasCard washers, ${periodLabel} (${washerCoinWeight!.value} ${washerCoinWeight!.unit}).`,
       collectedBy,
+      excludesFascardMachines: true,
     });
   }
   if (fascard.dryer.cash > 0) {
@@ -142,6 +152,7 @@ export async function POST(req: NextRequest) {
       machineType: "DRYER",
       notes: `Weighed coin collection, non-FasCard dryers, ${periodLabel} (${dryerCoinWeight!.value} ${dryerCoinWeight!.unit}).`,
       collectedBy,
+      excludesFascardMachines: true,
     });
   }
 
@@ -171,32 +182,70 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const created = await prisma.$transaction(
-    rows.map((row) =>
-      prisma.revenueEntry.create({
-        data: {
-          date: row.date,
-          amount: row.amount,
-          source: row.source,
-          machineType: row.machineType,
-          notes: row.notes,
-          collectedBy: row.collectedBy,
-        },
-      })
-    )
-  );
+  const periodStartDay = periodStart.toISOString().slice(0, 10);
+  const periodEndDay = periodEnd.toISOString().slice(0, 10);
 
-  await prisma.setting.upsert({
-    where: { key: "revenue.lastCollectionEnd" },
-    update: { value: periodEnd.toISOString().slice(0, 10) },
-    create: { key: "revenue.lastCollectionEnd", value: periodEnd.toISOString().slice(0, 10) },
-  });
+  try {
+    const created = await prisma.$transaction(
+      async (tx) => {
+        // The overlap check and the cursor update both have to happen inside
+        // the same serializable transaction as the inserts: read-then-write
+        // under a weaker isolation level would let two concurrent saves both
+        // read the same "not yet moved" cursor and both pass, double-saving
+        // the same period. Serializable makes Postgres abort one of them
+        // instead (caught below as P2034) rather than let that race through.
+        const cursor = await tx.setting.findUnique({ where: { key: "revenue.lastCollectionEnd" } });
+        if (cursor && !confirmOverlap && periodStartDay < cursor.value) {
+          throw new PeriodOverlapError(cursor.value);
+        }
 
-  return NextResponse.json({
-    entries: created,
-    summary: {
-      washerTotal: round2(fascard.washer.cash + fascard.washer.card + washerCoinDollars),
-      dryerTotal: round2(fascard.dryer.cash + fascard.dryer.card + dryerCoinDollars),
-    },
-  });
+        const entries = await Promise.all(
+          rows.map((row) =>
+            tx.revenueEntry.create({
+              data: {
+                date: row.date,
+                amount: row.amount,
+                source: row.source,
+                machineType: row.machineType,
+                notes: row.notes,
+                collectedBy: row.collectedBy,
+                excludesFascardMachines: row.excludesFascardMachines ?? false,
+              },
+            })
+          )
+        );
+
+        await tx.setting.upsert({
+          where: { key: "revenue.lastCollectionEnd" },
+          update: { value: periodEndDay },
+          create: { key: "revenue.lastCollectionEnd", value: periodEndDay },
+        });
+
+        return entries;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+
+    return NextResponse.json({
+      entries: created,
+      summary: {
+        washerTotal: round2(fascard.washer.cash + fascard.washer.card + washerCoinDollars),
+        dryerTotal: round2(fascard.dryer.cash + fascard.dryer.card + dryerCoinDollars),
+      },
+    });
+  } catch (err) {
+    if (err instanceof PeriodOverlapError) {
+      return NextResponse.json(
+        { error: "period_overlap", message: err.message, lastCollectionEnd: err.lastCollectionEnd },
+        { status: 409 }
+      );
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
+      return NextResponse.json(
+        { error: "concurrent_save", message: "Another collection was saved at the same moment. Please try again." },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
 }

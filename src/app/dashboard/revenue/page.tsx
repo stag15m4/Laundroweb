@@ -25,9 +25,26 @@ type RevenueEntry = {
   notes: string | null;
   collectedBy: string | null;
   machine: { id: string; name: string } | null;
+  machineType: string | null;
 };
 
 type Machine = { id: string; name: string; type: string };
+
+/**
+ * The generated notes from tools like quarter collection pack several facts
+ * into one string (period, weight, a changer-cash aside, ...) -- useful for
+ * an audit, distracting in a table row. Show just the first sentence; the
+ * full text is still one click away via the entry's detail dialog.
+ */
+const MACHINE_TYPE_LABELS: Record<string, string> = { WASHER: "Washers", DRYER: "Dryers", VENDING: "Vending" };
+
+function noteSummary(notes: string): { summary: string; truncated: boolean } {
+  const sentenceEnd = notes.indexOf(". ");
+  let summary = sentenceEnd === -1 ? notes : notes.slice(0, sentenceEnd + 1);
+  const truncated = summary.length < notes.length;
+  if (summary.length > 90) summary = `${summary.slice(0, 87)}…`;
+  return { summary, truncated: truncated || summary.endsWith("…") };
+}
 
 export default function RevenuePage() {
   const { data: session } = useSession();
@@ -36,6 +53,7 @@ export default function RevenuePage() {
   const [entries, setEntries] = useState<RevenueEntry[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [open, setOpen] = useState(false);
+  const [noteDetail, setNoteDetail] = useState<RevenueEntry | null>(null);
   const [form, setForm] = useState({
     date: format(new Date(), "yyyy-MM-dd"),
     amount: "",
@@ -241,27 +259,84 @@ export default function RevenuePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((e) => (
+                  {entries.map((e) => {
+                    const note = e.notes ? noteSummary(e.notes) : null;
+                    return (
                     <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="px-6 py-3">{formatDate(e.date)}</td>
                       <td className="px-6 py-3 font-semibold text-green-600">{formatCurrency(e.amount)}</td>
                       <td className="px-6 py-3"><Badge variant="secondary">{e.source}</Badge></td>
-                      <td className="px-6 py-3 text-gray-500">{e.machine?.name ?? "—"}</td>
+                      <td className="px-6 py-3 text-gray-500">
+                        {e.machine?.name ?? (e.machineType ? MACHINE_TYPE_LABELS[e.machineType] ?? e.machineType : "—")}
+                      </td>
                       <td className="px-6 py-3 text-gray-500">{e.collectedBy ?? "—"}</td>
-                      <td className="px-6 py-3 text-gray-400">{e.notes ?? "—"}</td>
+                      <td className="px-6 py-3 text-gray-400 max-w-xs">
+                        {note ? (
+                          <button
+                            type="button"
+                            onClick={() => setNoteDetail(e)}
+                            className="text-left hover:text-gray-700 hover:underline underline-offset-2"
+                          >
+                            {note.summary}
+                            {note.truncated && <span className="text-gray-300"> …</span>}
+                          </button>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="px-6 py-3">
                         <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}>
                           <Trash2 className="h-4 w-4 text-red-400" />
                         </Button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!!noteDetail} onOpenChange={(v) => !v && setNoteDetail(null)}>
+        <DialogContent className="max-h-[85vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>Entry Details</DialogTitle>
+          </DialogHeader>
+          {noteDetail && (
+            <div className="overflow-y-auto flex-1 space-y-2 text-sm pr-1">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Date</span>
+                <span>{formatDate(noteDetail.date)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Amount</span>
+                <span className="font-semibold text-green-600">{formatCurrency(noteDetail.amount)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Source</span>
+                <Badge variant="secondary">{noteDetail.source}</Badge>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Machine</span>
+                <span>
+                  {noteDetail.machine?.name ??
+                    (noteDetail.machineType ? MACHINE_TYPE_LABELS[noteDetail.machineType] ?? noteDetail.machineType : "—")}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Collected By</span>
+                <span>{noteDetail.collectedBy ?? "—"}</span>
+              </div>
+              <div className="pt-2 border-t border-gray-100">
+                <p className="text-gray-500 mb-1">Notes</p>
+                <p className="whitespace-pre-wrap text-gray-700">{noteDetail.notes}</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

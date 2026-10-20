@@ -80,7 +80,7 @@ export function agreementDocument(t: AgreementTerms, supersededNumber?: number):
   const termination = t.termType === "WEEKLY" ?
     "Either party may end week-to-week service on at least " + t.noticeDays + " days' written notice." :
     (t.earlyExit === "NOTICE" ? "Either party may end the initial term early without an early-exit penalty on at least " + t.noticeDays + " days' written notice." :
-      "Neither party has a right to terminate the initial term merely for convenience. Early termination requires a written agreement signed by both parties, or a termination right expressly stated here or provided by law.") +
+      "Neither party has a right to terminate the initial term merely for convenience. Early termination requires a mutual written agreement signed by both parties, or a termination right expressly stated here or provided by law.") +
     (t.renewal === "WEEKLY" ? " During a later week-to-week renewal, either party may terminate on at least " + t.noticeDays + " days' written notice." : "");
   return [
     "LINEN RENTAL AND LAUNDRY SERVICE AGREEMENT",

@@ -2,6 +2,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { LinenAccount } from "@/components/LinenAccount";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +84,13 @@ export default function WdfPage() {
     // load is intentionally driven by the search value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
+
+  useEffect(() => {
+    const orderId = new URLSearchParams(window.location.search).get("orderId");
+    if (orderId) openOrder(orderId);
+    // Read a linked invoice once on page entry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function chooseOrder(order: Order) {
     setSelected(order); setDetail(null);
@@ -183,6 +192,7 @@ export default function WdfPage() {
 
   return <div>
     <Header title="Wash • Dry • Fold" description="Clinton Laundry Works">
+      <Link className="text-sm text-blue-700 underline" href="/dashboard/wdf/linens">Linen rental</Link>
       <Button disabled={busy} onClick={newOrder}><Plus className="mr-1 h-4 w-4" />New order</Button>
     </Header>
     <div className="p-4 sm:p-6 space-y-5">
@@ -236,6 +246,7 @@ export default function WdfPage() {
           <p className="mt-2 whitespace-pre-wrap text-sm"><strong>Internal notes: </strong>{detail.customer.notes || "None"}</p>
           {detail.customer.pricingReason && <p className="mt-2 text-sm"><strong>Pricing notes: </strong>{detail.customer.pricingReason}</p>}
         </div>
+        <LinenAccount key={detail.customer.id} customerId={detail.customer.id} onOrder={openOrder} />
         <div className={panel}><h3 className="font-semibold mb-3">Order history · latest 100</h3>{!detail.orders.length && <p>No orders yet.</p>}
           {detail.orders.map(o => <button key={o.id} className="block w-full text-left border-t py-3" onClick={() => openOrder(o.id)}>#{o.number} · {displayDate(o.createdAt)} · {statusLabel(o.status)} · {money(o.totalCents)} · {money(o.balanceCents)} outstanding</button>)}
         </div>

@@ -616,6 +616,7 @@ model WdfCustomer {
   updatedAt DateTime @updatedAt
   orders WdfOrder[]
   audits WdfAudit[]
+  linenPlan WdfLinenPlan?
   @@index([name])
 }
 
@@ -650,6 +651,7 @@ model WdfOrder {
   lines WdfLine[]
   payments WdfPayment[]
   audits WdfAudit[]
+  linenCharge WdfLinenCharge?
   @@index([customerId, createdAt])
   @@index([status, createdAt])
 }
@@ -697,4 +699,66 @@ model WdfAudit {
   createdAt DateTime @default(now())
   @@index([orderId, createdAt])
   @@index([customerId, createdAt])
+}
+
+
+// One rental program per CRM customer. Quantities are custody balances:
+// delivered minus returned minus write-offs, with explicit owner reconciliations.
+model WdfLinenPlan {
+  id String @id @default(cuid())
+  customerId String @unique
+  customer WdfCustomer @relation(fields: [customerId], references: [id])
+  itemName String @default("Bar towels")
+  towelsPerExchange Int @default(100)
+  bagsPerExchange Int @default(1)
+  weeklyFeeCents Int?
+  exchangeDay Int? // 0=Sunday ... 6=Saturday
+  towelGrams Int? // weight of one clean dry towel, calibrated to this program
+  bagTareGrams Int @default(0)
+  notes String?
+  active Boolean @default(true)
+  version Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  exchanges WdfLinenExchange[]
+  charges WdfLinenCharge[]
+}
+
+model WdfLinenExchange {
+  id String @id @default(cuid())
+  planId String
+  plan WdfLinenPlan @relation(fields: [planId], references: [id])
+  requestKey String @unique
+  requestDigest String
+  kind String @default("EXCHANGE")
+  towelsOut Int @default(0)
+  towelsIn Int @default(0)
+  towelsLost Int @default(0)
+  bagsOut Int @default(0)
+  bagsIn Int @default(0)
+  bagsLost Int @default(0)
+  towelAdjustment Int @default(0)
+  bagAdjustment Int @default(0)
+  countMethod String @default("COUNTED")
+  grossGrams Int?
+  towelGrams Int?
+  tareGrams Int?
+  notes String?
+  reason String?
+  actorId String
+  actorName String
+  occurredAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  @@index([planId, occurredAt])
+}
+
+model WdfLinenCharge {
+  id String @id @default(cuid())
+  planId String
+  plan WdfLinenPlan @relation(fields: [planId], references: [id])
+  weekStart String @db.VarChar(10)
+  orderId String @unique
+  order WdfOrder @relation(fields: [orderId], references: [id])
+  createdAt DateTime @default(now())
+  @@unique([planId, weekStart])
 }

@@ -37,6 +37,7 @@ type NavItem = {
 const ownerNav: NavItem[] = [
   { href: "/dashboard/compliance", label: "Compliance", icon: CalendarDays },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/wdf", label: "Wash Dry Fold", icon: ShoppingBag },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/manuals", label: "Manuals", icon: BookMarked },
   { href: "/dashboard/revenue", label: "Finance", icon: DollarSign, activePaths: FINANCE_PATHS },
@@ -54,6 +55,7 @@ const ownerNav: NavItem[] = [
 const staffNav: NavItem[] = [
   { href: "/dashboard/compliance", label: "Compliance duties", icon: CalendarDays },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/wdf", label: "Wash Dry Fold", icon: ShoppingBag },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/manuals", label: "Manuals", icon: BookMarked },
   { href: "/dashboard/phone", label: "Phone inbox", icon: Phone },

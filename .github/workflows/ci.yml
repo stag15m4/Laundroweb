@@ -75,6 +75,9 @@ jobs:
       - name: Phone routing and signature tests
         run: node --import tsx --test tests/phone.test.ts
 
+      - name: WDF pricing tests
+        run: node --import tsx --test tests/wdf-pricing.test.ts
+
       - name: Build
         run: npm run build
 

@@ -103,6 +103,14 @@ async function main() {
   const noSession = await fetch(`${BASE}/api/compliance`);
   check("compliance rejects anonymous requests", noSession.status === 401);
   const staff = await attemptLogin(STAFF_EMAIL, STAFF_PASSWORD);
+  console.log("\nPhone inbox and configuration permissions:");
+  check("phone inbox rejects anonymous access", (await fetch(`${BASE}/api/phone/messages`)).status === 403);
+  check("phone inbox permits staff", (await fetch(`${BASE}/api/phone/messages`, { headers: { cookie: staff.cookie } })).status === 200);
+  check("phone settings reject staff reads", (await fetch(`${BASE}/api/phone/config`, { headers: { cookie: staff.cookie } })).status === 403);
+  check("phone settings reject staff writes", (await fetch(`${BASE}/api/phone/config`, { method: "PUT", headers: { cookie: staff.cookie, "Content-Type": "application/json" }, body: "{}" })).status === 403);
+  check("phone settings permit owner", (await fetch(`${BASE}/api/phone/config`, { headers: ownerHeaders })).status === 200);
+  check("unsigned telephone callbacks rejected", (await fetch(`${BASE}/api/phone/webhooks/incoming`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "Digits=9" })).status === 403);
+
   const forbidden = await fetch(`${BASE}/api/compliance`, { headers: { cookie: staff.cookie } });
   check("compliance rejects staff access", forbidden.status === 403);
   const created = await fetch(`${BASE}/api/compliance`, { method: "POST", headers: ownerHeaders,

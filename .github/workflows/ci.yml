@@ -72,6 +72,9 @@ jobs:
       - name: Protect receiver tests
         run: node --import tsx --test tests/protect.test.ts
 
+      - name: WDF pricing tests
+        run: node --import tsx --test tests/wdf-pricing.test.ts
+
       - name: Build
         run: npm run build
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID, createHash } from "node:crypto";
+import { wdfSmoke } from "./wdf-smoke.mjs";
 /**
  * End-to-end smoke test run against a live, running instance of the app.
  *
@@ -196,6 +197,8 @@ async function main() {
   check("owner sees one event after concurrent retries", trafficResponse.status === 200 && traffic.events?.filter(e => e.alarmName === protectAlarm.alarm.name).length === 1);
   check("diagnostics are not cached", trafficResponse.headers.get("cache-control") === "no-store");
   check("diagnostics do not return the secret", !JSON.stringify(traffic).includes(process.env.PROTECT_WEBHOOK_TOKEN));
+
+  await wdfSmoke({ base: BASE, ownerHeaders, staffHeaders: { cookie: staff.cookie, "Content-Type": "application/json", Origin: BASE }, check });
 
   console.log("\nRepeated failures lock the account:");
   for (let i = 0; i < 5; i++) {

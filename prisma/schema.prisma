@@ -540,3 +540,57 @@ model ProtectWebhookEvent {
 
   @@index([receivedAt])
 }
+
+/// One laundromat line. Provider credentials stay in environment variables.
+model PhoneConfig {
+  id           String   @id @default("main")
+  enabled      Boolean  @default(false)
+  greeting     String   @default("Thank you for calling the laundromat.")
+  information  String   @default("Please leave a general message for hours, location, or payment questions.")
+  contacts     Json     @default("[]")
+  retrySeconds Int      @default(120)
+  maxAttempts  Int      @default(6)
+  workerLastSeenAt DateTime?
+  updatedAt    DateTime @updatedAt
+}
+
+model PhoneMessage {
+  id              String    @id @default(cuid())
+  callSid         String    @unique
+  caller          String
+  urgent          Boolean   @default(false)
+  recordingSid    String?   @unique
+  duration        Int?
+  transcript      String?
+  status          String    @default("OPEN") // OPEN / ACKNOWLEDGED / RESOLVED
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?
+  resolvedAt      DateTime?
+  resolvedBy      String?
+  nextAttemptAt   DateTime?
+  leaseUntil      DateTime?
+  leaseToken      String?
+  attemptCount    Int       @default(0)
+  escalationEnded Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  attempts        PhoneAttempt[]
+
+  @@index([urgent, status, nextAttemptAt])
+}
+
+model PhoneAttempt {
+  id          String       @id @default(cuid())
+  messageId   String
+  message     PhoneMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  sequence    Int
+  contactName String
+  destination String
+  callSid     String?      @unique
+  status      String       @default("STARTING")
+  error       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([messageId, sequence])
+}

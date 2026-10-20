@@ -78,6 +78,9 @@ jobs:
       - name: WDF pricing tests
         run: node --import tsx --test tests/wdf-pricing.test.ts
 
+      - name: Linen custody and weekly billing tests
+        run: node --import tsx --test tests/linen.test.ts
+
       - name: Build
         run: npm run build
 

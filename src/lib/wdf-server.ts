@@ -7,6 +7,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { WdfError, integer, text, date, key, effectivePricing, quote, paymentBalance, allowTransition } from "@/lib/wdf-pricing";
 
+import { readLinen, writeLinen } from "@/lib/linen-server";
+
 type Actor = { id: string; name: string; role: string };
 const orderInclude = {
   lines: true,
@@ -61,6 +63,7 @@ async function actor() {
 export async function read(req: NextRequest) {
   const user = await actor();
   const p = req.nextUrl.searchParams;
+  if (p.get("linen") === "1") return { ...await readLinen(p.get("customerId")), isOwner: user.role === "OWNER" };
   const orderId = p.get("orderId");
   if (orderId) {
     const order = await prisma.wdfOrder.findUnique({ where: { id: orderId }, include: orderInclude });
@@ -121,6 +124,7 @@ export async function write(req: NextRequest) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await prisma.$transaction(async tx => {
+        if (action?.startsWith("linen.")) return writeLinen(tx, user, body, digest);
         if (action === "customer.create") {
           const fields = customerFields(body);
           if (user.role !== "OWNER" && ["customRateCents", "customMinimumCents", "pricingExpiresAt", "pricingReason"].some(k => body[k] != null && body[k] !== ""))

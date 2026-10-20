@@ -300,12 +300,12 @@ export default function RevenuePage() {
       </div>
 
       <Dialog open={!!noteDetail} onOpenChange={(v) => !v && setNoteDetail(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[85vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Entry Details</DialogTitle>
           </DialogHeader>
           {noteDetail && (
-            <div className="space-y-2 text-sm">
+            <div className="overflow-y-auto flex-1 space-y-2 text-sm pr-1">
               <div className="flex justify-between">
                 <span className="text-gray-500">Date</span>
                 <span>{formatDate(noteDetail.date)}</span>

@@ -1,6 +1,7 @@
 
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { ServiceAgreements } from "@/components/ServiceAgreements";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -129,7 +130,7 @@ export function LinenAccount({ customerId, onOrder }: { customerId: string; onOr
       </form>}
     </div>
 
-    {p && <><div className="grid lg:grid-cols-2 gap-4">
+    {p && <><ServiceAgreements key={customerId} customerId={customerId} /><div className="grid lg:grid-cols-2 gap-4">
       <form className={box + " space-y-4"} onSubmit={e => {
         e.preventDefault(); save({ action: "linen.exchange", requestKey: requestKey.current, version: p.version,
           towelsOut: Number(exchange.towelsOut), towelsIn: Number(exchange.towelsIn), bagsOut: Number(exchange.bagsOut), bagsIn: Number(exchange.bagsIn),

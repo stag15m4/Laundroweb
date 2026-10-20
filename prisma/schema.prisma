@@ -722,6 +722,7 @@ model WdfLinenPlan {
   updatedAt DateTime @updatedAt
   exchanges WdfLinenExchange[]
   charges WdfLinenCharge[]
+  agreements WdfServiceAgreement[]
 }
 
 model WdfLinenExchange {
@@ -761,4 +762,44 @@ model WdfLinenCharge {
   order WdfOrder @relation(fields: [orderId], references: [id])
   createdAt DateTime @default(now())
   @@unique([planId, weekStart])
+}
+
+
+// Immutable contract snapshots. Draft edits create a new version; issuing
+// freezes the original PDF. Signed copies are held here, outside deletable Documents.
+model WdfServiceAgreement {
+  id String @id @default(cuid())
+  number Int @unique @default(autoincrement())
+  planId String
+  plan WdfLinenPlan @relation(fields: [planId], references: [id])
+  version Int
+  requestKey String @unique
+  requestDigest String
+  status String @default("DRAFT")
+  supersedesId String?
+  terms Json
+  documentText String
+  documentSha String
+  templateVersion String @default("1")
+  createdById String
+  createdByName String
+  createdAt DateTime @default(now())
+  issuedAt DateTime?
+  issuedByName String?
+  issuedPdf Bytes?
+  issuedPdfSha String?
+  signedAt DateTime?
+  signedByName String?
+  providerSignedDate String? @db.VarChar(10)
+  customerSignedDate String? @db.VarChar(10)
+  signedFileName String?
+  signedFileData Bytes?
+  signedFileSha String?
+  supersededAt DateTime?
+  supersededById String?
+  voidedAt DateTime?
+  voidedByName String?
+  voidReason String?
+  @@unique([planId, version])
+  @@index([planId, createdAt])
 }

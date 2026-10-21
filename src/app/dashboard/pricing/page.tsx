@@ -3,21 +3,12 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
-import { PageTabs } from "@/components/layout/PageTabs";
+import { PageTabs, EQUIPMENT_TABS } from "@/components/layout/PageTabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileDown, Pencil } from "lucide-react";
-
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const EQUIPMENT_TABS = [
-  { label: "Machines", href: "/dashboard/equipment" },
-  { label: "Parts", href: "/dashboard/parts" },
-  { label: "Maintenance", href: "/dashboard/maintenance" },
-  { label: "Pricing", href: "/dashboard/pricing" },
-];
 
 const WASHER_CODES = [
   { code: "ATS1", label: "Hot" },

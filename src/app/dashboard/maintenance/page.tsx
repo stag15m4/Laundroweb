@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
-import { PageTabs } from "@/components/layout/PageTabs";
+import { PageTabs, EQUIPMENT_TABS } from "@/components/layout/PageTabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -405,12 +405,7 @@ export default function MaintenancePage() {
         </DialogContent>
       </Dialog>
 
-      <PageTabs tabs={[
-        { label: "Machines", href: "/dashboard/equipment" },
-        { label: "Parts", href: "/dashboard/parts" },
-        { label: "Maintenance", href: "/dashboard/maintenance" },
-        { label: "Pricing", href: "/dashboard/pricing" },
-      ]} />
+      <PageTabs tabs={EQUIPMENT_TABS} />
 
       <div className="p-6 space-y-8 max-w-3xl">
         {schedules.length === 0 && (

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
-import { PageTabs } from "@/components/layout/PageTabs";
+import { PageTabs, EQUIPMENT_TABS } from "@/components/layout/PageTabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -186,12 +186,7 @@ export default function PartsPage() {
         )}
       </Header>
 
-      <PageTabs tabs={[
-        { label: "Machines", href: "/dashboard/equipment" },
-        { label: "Parts", href: "/dashboard/parts" },
-        { label: "Maintenance", href: "/dashboard/maintenance" },
-        { label: "Pricing", href: "/dashboard/pricing" },
-      ]} />
+      <PageTabs tabs={EQUIPMENT_TABS} />
 
       {/* Add / Edit dialog */}
       {isOwner && (

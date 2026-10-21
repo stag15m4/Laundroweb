@@ -20,7 +20,7 @@ function audit(user: Actor, customerId: string, action: string, detail: Prisma.I
 export async function readAgreements(customerId: string | null, user: Actor) {
   if (!customerId) throw new WdfError("Select a customer.");
   const plan = await prisma.wdfLinenPlan.findUnique({ where: { customerId } });
-  const customer = await prisma.wdfCustomer.findUnique({ where: { id: customerId }, select: { name: true, company: true, email: true } });
+  const customer = await prisma.wdfCustomer.findUnique({ where: { id: customerId }, select: { name: true, company: true, email: true, billingAddress: true, deliveryLocation: true } });
   // User profiles have no active flag: deletion removes a representative from future choices.
   // Only owners who can draft contracts need the staff directory.
   const representatives = user.role === "OWNER" ? await prisma.user.findMany({

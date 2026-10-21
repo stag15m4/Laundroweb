@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { WdfError, integer, text, date, key } from "@/lib/wdf-pricing";
 import { applyMovement, estimateTowels, serviceWeek, Movement } from "@/lib/linen";
+import { ServiceLocation, locationSnapshot } from "@/lib/wdf-location";
 
 type Actor = { id: string; name: string; role: string };
 function requireOwner(user: Actor) {
@@ -31,7 +32,7 @@ export async function readLinen(customerId: string | null) {
   // Read the plan and its ledger in one snapshot so the displayed version and
   // balances can safely be used for optimistic concurrency on the next write.
   return prisma.$transaction(async tx => {
-    const customer = await tx.wdfCustomer.findUnique({ where: { id: customerId }, select: { id: true, name: true, active: true } });
+    const customer = await tx.wdfCustomer.findUnique({ where: { id: customerId }, select: { id: true, name: true, active: true, deliveryLocation: true, version: true } });
     if (!customer) throw new WdfError("Customer not found.", 404);
     const plan = await tx.wdfLinenPlan.findUnique({ where: { customerId }, include: {
       exchanges: { orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }], take: 100 },
@@ -73,12 +74,15 @@ export async function writeLinen(tx: Prisma.TransactionClient, user: Actor, body
     const prior = await tx.wdfLinenCharge.findUnique({ where: { planId_weekStart: { planId: plan.id, weekStart } } });
     // An existing week's invoice is returned, never duplicated or repriced.
     if (prior) return { orderId: prior.orderId, alreadyBilled: true };
+    if (!customer.deliveryLocation) throw new WdfError("Look up and confirm the customer's primary linen location before creating a new weekly invoice.");
     if (plan.version !== integer(body.version, "Agreement version")) throw new WdfError("Rental agreement changed. Reload before billing.", 409);
     if (!plan.weeklyFeeCents) throw new WdfError("An owner must set an agreed weekly price before invoicing.");
     const description = "Weekly " + plan.itemName + " rental · week of " + weekStart + " · " + plan.towelsPerExchange + " towels per exchange";
     const order = await tx.wdfOrder.create({ data: {
       requestKey: "linen-" + plan.id + "-" + weekStart, requestDigest: digest,
       customerId, customerName: customer.name, customerPhone: customer.phone, customerEmail: customer.email,
+      billingAddress: customer.billingAddress, fulfillment: "LINEN",
+      serviceLocation: customer.deliveryLocation ? JSON.parse(JSON.stringify(locationSnapshot("LINEN", customer.deliveryLocation as ServiceLocation))) : Prisma.DbNull,
       preferences: customer.preferences, weightHundredths: 0, rateCents: 200, minimumCents: 0, pricingSource: "LINEN_AGREEMENT",
       pricingReason: "Agreed weekly linen rental", laundryCents: 0, totalCents: plan.weeklyFeeCents, status: "READY",
       createdById: user.id, createdByName: user.name,

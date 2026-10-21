@@ -4,6 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { LinenAccount } from "@/components/LinenAccount";
+import { ServiceAddresses } from "@/components/ServiceAddresses";
+import { CLW_LOCATION, mapsUrl } from "@/lib/wdf-location";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +59,7 @@ export default function WdfPage() {
   const [customerForm, setCustomerForm] = useState(emptyCustomer);
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderCustomer, setOrderCustomer] = useState("");
+  const [fulfillment, setFulfillment] = useState("PICKUP");
   const [weight, setWeight] = useState("");
   const [due, setDue] = useState("");
   const [orderNotes, setOrderNotes] = useState("");
@@ -150,7 +153,7 @@ export default function WdfPage() {
       setCustomers(data.customers);
       const preferred = detail?.customer.active ? detail.customer.id : "";
       if (preferred && !data.customers.some((c: Customer) => c.id === preferred)) setCustomers([...data.customers, detail!.customer]);
-      setOrderCustomer(preferred); setWeight(""); setDue(""); setOrderNotes(""); setOverride(false); setOverrideReason(""); setLines([]);
+      setOrderCustomer(preferred); setFulfillment("PICKUP"); setWeight(""); setDue(""); setOrderNotes(""); setOverride(false); setOverrideReason(""); setLines([]);
       orderKey.current = crypto.randomUUID(); setOrderOpen(true);
     } catch (e) { setError((e as Error).message); }
   }
@@ -163,6 +166,7 @@ export default function WdfPage() {
   async function saveOrder(e: React.FormEvent) {
     e.preventDefault();
     await mutate({ action: "order.create", requestKey: orderKey.current, customerId: orderCustomer,
+      fulfillment, customerVersion: chosenCustomer?.version,
       weightHundredths: Math.round(Number(weight) * 100), dueAt: iso(due), notes: orderNotes,
       lines: lines.map(l => ({ description: l.description, quantity: Number(l.quantity), unitCents: cents(l.price) })),
       ...(override ? { rateCents, minimumCents, pricingReason: overrideReason } : {}),
@@ -246,7 +250,8 @@ export default function WdfPage() {
           <p className="mt-2 whitespace-pre-wrap text-sm"><strong>Internal notes: </strong>{detail.customer.notes || "None"}</p>
           {detail.customer.pricingReason && <p className="mt-2 text-sm"><strong>Pricing notes: </strong>{detail.customer.pricingReason}</p>}
         </div>
-        <LinenAccount key={detail.customer.id} customerId={detail.customer.id} onOrder={openOrder} />
+        <ServiceAddresses key={detail.customer.id} customerId={detail.customer.id} onSaved={() => { openCustomer(detail.customer.id); }} />
+        <LinenAccount key={detail.customer.id} customerId={detail.customer.id} onOrder={openOrder} hideAddresses addressVersion={detail.customer.version} />
         <div className={panel}><h3 className="font-semibold mb-3">Order history · latest 100</h3>{!detail.orders.length && <p>No orders yet.</p>}
           {detail.orders.map(o => <button key={o.id} className="block w-full text-left border-t py-3" onClick={() => openOrder(o.id)}>#{o.number} · {displayDate(o.createdAt)} · {statusLabel(o.status)} · {money(o.totalCents)} · {money(o.balanceCents)} outstanding</button>)}
         </div>
@@ -254,6 +259,10 @@ export default function WdfPage() {
       </div>}
 
       {selected && <div className="space-y-4">
+        <div className={panel + " text-sm space-y-1"}><p className="font-semibold">{selected.fulfillment === "DELIVERY" ? "Delivery" : selected.fulfillment === "LINEN" ? "Primary linen location" : selected.fulfillment === "PICKUP" ? "Customer pickup at CLW" : "Location not recorded on this older invoice"}</p>
+          {selected.billingAddress && <p>Billing address: {selected.billingAddress}</p>}
+          {selected.serviceLocation ? <><p>{selected.serviceLocation.inputAddress}</p><p>{selected.serviceLocation.county}, {selected.serviceLocation.state}</p><a className="text-blue-700 underline" href={mapsUrl(selected.serviceLocation)} target="_blank" rel="noopener noreferrer">Open in Maps</a></> : <p>Service county not recorded. Confirm location before tax reporting.</p>}
+        </div>
         <div className="flex flex-wrap gap-2 justify-between"><Button variant="ghost" onClick={() => setSelected(null)}><ArrowLeft className="mr-2 h-4 w-4" />Orders</Button>
           <div className="flex gap-2"><a target="_blank" rel="noopener noreferrer" href={"/wdf/print/" + selected.id}><Button variant="outline"><Printer className="mr-2 h-4 w-4" />Invoice / receipt</Button></a><a target="_blank" rel="noopener noreferrer" href={"/wdf/print/" + selected.id + "?ticket=1"}><Button variant="outline">Bag ticket</Button></a></div>
         </div>
@@ -330,6 +339,9 @@ export default function WdfPage() {
             <Field label="Customer"><select required className={selectClass} value={orderCustomer} onChange={e => { setOrderCustomer(e.target.value); orderKey.current = crypto.randomUUID(); }}><option value="">Select customer</option>{customers.filter(c => c.active).map(c => <option key={c.id} value={c.id}>{c.name} · {money(c.rateCents)}/lb</option>)}</select></Field>
             <p className="text-xs text-gray-500">Missing a customer? Close this window and add them under Customers. The picker shows up to 100; search Customers and open their profile for older accounts.</p>
             {chosenCustomer?.preferences && <p className="whitespace-pre-wrap text-sm rounded bg-blue-50 p-3">{chosenCustomer.preferences}</p>}
+            <Field label="How will the customer receive the clean laundry?"><select className={selectClass} value={fulfillment} onChange={e => { setFulfillment(e.target.value); orderKey.current = crypto.randomUUID(); }}><option value="PICKUP">Customer pickup at CLW</option><option value="DELIVERY">We deliver to the customer</option></select></Field>
+            {fulfillment === "DELIVERY" ? chosenCustomer?.deliveryLocation ? <p className="text-sm">Delivery: {chosenCustomer.deliveryLocation.inputAddress}<br />{chosenCustomer.deliveryLocation.county}</p> : <p className="text-sm text-amber-800">Save a confirmed delivery location under the customer's profile first.</p> : <p className="text-sm">Pickup: {CLW_LOCATION.inputAddress} · {CLW_LOCATION.county}</p>}
+            {chosenCustomer && <button type="button" className="text-sm text-blue-700 underline" onClick={() => { setOrderOpen(false); openCustomer(chosenCustomer.id); }}>Manage customer addresses</button>}
             <Field label="Dry laundry weight (lb)"><Input type="number" min="0" max="10000" step="0.01" required value={weight} onChange={e => { setWeight(e.target.value); orderKey.current = crypto.randomUUID(); }} /></Field>
             <p className="text-sm">{money(rateCents)}/lb · {money(minimumCents)} minimum · {override ? "Order override" : chosenCustomer?.pricingSource === "CUSTOMER" ? "Negotiated customer terms" : "Standard pricing"}</p>
             {owner && <><label className="flex gap-2 text-sm"><input type="checkbox" checked={override} onChange={e => { setOverride(e.target.checked); setRate(((chosenCustomer?.rateCents ?? 200) / 100).toFixed(2)); setMinimum(((chosenCustomer?.minimumCents ?? 2500) / 100).toFixed(2)); orderKey.current = crypto.randomUUID(); }} />Override price for this order</label>
@@ -344,7 +356,7 @@ export default function WdfPage() {
             <Field label="Internal order notes"><Textarea value={orderNotes} onChange={e => { setOrderNotes(e.target.value); orderKey.current = crypto.randomUUID(); }} /></Field>
             <p className="text-xl font-semibold">Total: {preview ? money(preview.totalCents) : "—"}</p>
             <p className="text-xs text-gray-500">Weight 0 is allowed for specialty-only orders. Prices are confirmed and saved by the server when you create the order.</p>
-            <Button disabled={busy || !preview || !chosenCustomer} className="w-full">Create order</Button>
+            <Button disabled={busy || !preview || !chosenCustomer || (fulfillment === "DELIVERY" && !chosenCustomer.deliveryLocation)} className="w-full">Create order</Button>
           </form>
         </DialogContent>
       </Dialog>

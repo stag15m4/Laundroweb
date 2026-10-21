@@ -1,5 +1,6 @@
 
 import { randomUUID } from "node:crypto";
+import { saveTestLocation } from "./geolocation-fixture.mjs";
 export async function linenSmoke({ base, ownerHeaders, staffHeaders, check }) {
   console.log("\nLinen rental custody and weekly invoicing:");
   async function post(body, headers = ownerHeaders) {
@@ -9,6 +10,7 @@ export async function linenSmoke({ base, ownerHeaders, staffHeaders, check }) {
   const customer = (await post({ action: "customer.create", name: "CI linen " + randomUUID() })).customer;
   if (!customer?.id) throw new Error("Linen test customer failed.");
   const cid = customer.id;
+  await saveTestLocation({ base, headers: ownerHeaders, customer });
   const read = async (id = cid) => {
     const r = await fetch(base + "/api/wdf?linen=1&customerId=" + id, { headers: staffHeaders });
     return r.json();

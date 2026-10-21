@@ -81,6 +81,9 @@ jobs:
       - name: Linen custody and weekly billing tests
         run: node --import tsx --test tests/linen.test.ts
 
+      - name: Service agreement and PDF tests
+        run: node --import tsx --test tests/service-agreement.test.ts
+
       - name: Build
         run: npm run build
 

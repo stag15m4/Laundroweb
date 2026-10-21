@@ -2,6 +2,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { wdfSmoke } from "./wdf-smoke.mjs";
 import { linenSmoke } from "./linen-smoke.mjs";
+import { agreementSmoke } from "./agreement-smoke.mjs";
 /**
  * End-to-end smoke test run against a live, running instance of the app.
  *
@@ -210,6 +211,8 @@ async function main() {
   await wdfSmoke({ base: BASE, ownerHeaders, staffHeaders: { cookie: staff.cookie, "Content-Type": "application/json", Origin: BASE }, check });
 
   await linenSmoke({ base: BASE, ownerHeaders, staffHeaders: { cookie: staff.cookie, "Content-Type": "application/json", Origin: BASE }, check });
+
+  await agreementSmoke({ base: BASE, ownerHeaders, staffHeaders: { cookie: staff.cookie, "Content-Type": "application/json", Origin: BASE }, check });
 
   console.log("\nRepeated failures lock the account:");
   for (let i = 0; i < 5; i++) {

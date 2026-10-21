@@ -9,6 +9,8 @@ import { WdfError, integer, text, date, key, effectivePricing, quote, paymentBal
 
 import { readLinen, writeLinen } from "@/lib/linen-server";
 
+import { readAgreements, writeAgreement } from "@/lib/agreement-server";
+
 type Actor = { id: string; name: string; role: string };
 const orderInclude = {
   lines: true,
@@ -60,10 +62,16 @@ async function actor() {
   if (!user) throw new WdfError("Please sign in.", 401);
   return user;
 }
+export { actor as wdfActor };
+export function assertWdfOrigin(req: NextRequest) {
+  const allowed = new Set([req.nextUrl.origin, ...(process.env.NEXTAUTH_URL ? [new URL(process.env.NEXTAUTH_URL).origin] : [])]);
+  if (!req.headers.get("origin") || !allowed.has(req.headers.get("origin")!)) throw new WdfError("Request origin is not allowed.", 403);
+}
 export async function read(req: NextRequest) {
   const user = await actor();
   const p = req.nextUrl.searchParams;
   if (p.get("linen") === "1") return { ...await readLinen(p.get("customerId")), isOwner: user.role === "OWNER" };
+  if (p.get("agreements") === "1") return { ...await readAgreements(p.get("customerId")), isOwner: user.role === "OWNER" };
   const orderId = p.get("orderId");
   if (orderId) {
     const order = await prisma.wdfOrder.findUnique({ where: { id: orderId }, include: orderInclude });
@@ -112,8 +120,7 @@ export async function read(req: NextRequest) {
 
 export async function write(req: NextRequest) {
   const user = await actor();
-  const allowed = new Set([req.nextUrl.origin, ...(process.env.NEXTAUTH_URL ? [new URL(process.env.NEXTAUTH_URL).origin] : [])]);
-  if (!req.headers.get("origin") || !allowed.has(req.headers.get("origin")!)) throw new WdfError("Request origin is not allowed.", 403);
+  assertWdfOrigin(req);
   if (!req.headers.get("content-type")?.includes("application/json")) throw new WdfError("Send JSON.", 415);
   const raw = await req.text();
   if (raw.length > 64000) throw new WdfError("Request is too large.", 413);
@@ -124,6 +131,7 @@ export async function write(req: NextRequest) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await prisma.$transaction(async tx => {
+        if (action?.startsWith("agreement.")) return writeAgreement(tx, user, body, digest);
         if (action?.startsWith("linen.")) return writeLinen(tx, user, body, digest);
         if (action === "customer.create") {
           const fields = customerFields(body);

@@ -22,8 +22,8 @@ export const EQUIPMENT_TABS: Tab[] = [
 export function PageTabs({ tabs }: { tabs: Tab[] }) {
   const pathname = usePathname();
   return (
-    <div className="border-b border-gray-200 px-6">
-      <nav className="-mb-px flex gap-1">
+    <div className="border-b border-gray-200 px-6 overflow-x-auto">
+      <nav className="-mb-px flex gap-1 w-max">
         {tabs.map(({ label, href }) => {
           const active = pathname === href || pathname.startsWith(href + "/");
           return (

@@ -71,7 +71,7 @@ export async function read(req: NextRequest) {
   const user = await actor();
   const p = req.nextUrl.searchParams;
   if (p.get("linen") === "1") return { ...await readLinen(p.get("customerId")), isOwner: user.role === "OWNER" };
-  if (p.get("agreements") === "1") return { ...await readAgreements(p.get("customerId")), isOwner: user.role === "OWNER" };
+  if (p.get("agreements") === "1") return { ...await readAgreements(p.get("customerId"), user), isOwner: user.role === "OWNER" };
   const orderId = p.get("orderId");
   if (orderId) {
     const order = await prisma.wdfOrder.findUnique({ where: { id: orderId }, include: orderInclude });

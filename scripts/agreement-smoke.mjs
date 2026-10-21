@@ -21,11 +21,21 @@ export async function agreementSmoke({ base, ownerHeaders, staffHeaders, check }
     paymentDays: 7, cureDays: 10, returnDays: 7, assignment: "SALE", towelReplacementCents: 82, bagReplacementCents: 500,
     specialTerms: "CI test document, not a real agreement.",
   };
+  const directory = await (await fetch(base + "/api/wdf?agreements=1&customerId=" + cid, { headers: ownerHeaders })).json();
+  const rep = directory.representatives.find(r => r.id === directory.currentUserId);
+  if (!rep) throw new Error("Current owner missing from representatives.");
+  terms.providerRepresentativeId = rep.id;
+  const staffDirectory = await (await fetch(base + "/api/wdf?agreements=1&customerId=" + cid, { headers: staffHeaders })).json();
+  check("staff agreement reads do not expose representative directory", staffDirectory.representatives.length === 0);
   const input = { action: "agreement.create", customerId: cid, requestKey: randomUUID(), terms };
   check("staff cannot draft contracts", (await post(input, staffHeaders)).status === 403);
+  check("deleted or unknown representative is rejected", (await post({ ...input, requestKey: randomUUID(), terms: { ...terms, providerRepresentativeId: "missing-user" } })).status === 400);
   const a = (await post(input)).agreement;
   if (!a?.id) throw new Error("Agreement creation failed.");
   check("draft uses saved rental price", a.status === "DRAFT" && a.terms.weeklyFeeCents === 3846 && a.documentText.includes("$38.46"));
+  check("provider and representative use trusted app data", a.terms.providerLegalName === "Clinton Laundry Works, LLC" &&
+    a.terms.providerAddress === "540 McKoy St" && a.terms.providerRepresentativeId === rep.id && a.terms.providerSigner === rep.name && a.terms.providerEmail === rep.email &&
+    a.terms.providerTitle === "Authorized Representative");
   const same = await post(input);
   check("draft retries preserve one version", same.agreement?.id === a.id);
   check("reused draft key cannot change terms", (await post({ ...input, terms: { ...terms, noticeDays: 30 } })).status === 409);

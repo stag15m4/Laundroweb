@@ -5,12 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { money, displayDate } from "@/lib/wdf-types";
-import { AgreementTerms, endAfterMonths } from "@/lib/service-agreement";
+import { AgreementTerms, endAfterMonths, AGREEMENT_PROVIDER_NAME, AGREEMENT_PROVIDER_ADDRESS } from "@/lib/service-agreement";
 
 type Contract = { id: string; number: number; version: number; status: string; terms: AgreementTerms; documentText: string; documentSha: string; createdAt: string;
   issuedAt: string | null; signedAt: string | null; signedFileName: string | null; providerSignedDate: string | null; customerSignedDate: string | null; voidReason: string | null };
 type Form = {
-  providerLegalName: string; providerAddress: string; providerEmail: string; providerSigner: string; providerTitle: string;
+  providerRepresentativeId: string; providerLegalName: string; providerAddress: string; providerEmail: string; providerSigner: string; providerTitle: string;
   customerLegalName: string; customerAddress: string; customerEmail: string; customerSigner: string; customerTitle: string; serviceAddress: string;
   startDate: string; termType: string; endDate: string; renewal: string; noticeDays: string; earlyExit: string; paymentDays: string;
   cureDays: string; returnDays: string; assignment: string; specialTerms: string; towelReplacement: string; bagReplacement: string;
@@ -18,7 +18,7 @@ type Form = {
 function today() {
   const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
-const baseForm: Form = { providerLegalName: "", providerAddress: "", providerEmail: "", providerSigner: "", providerTitle: "",
+const baseForm: Form = { providerRepresentativeId: "", providerLegalName: AGREEMENT_PROVIDER_NAME, providerAddress: "", providerEmail: "", providerSigner: "", providerTitle: "",
   customerLegalName: "", customerAddress: "", customerEmail: "", customerSigner: "", customerTitle: "", serviceAddress: "",
   startDate: "", termType: "WEEKLY", endDate: "", renewal: "END", noticeDays: "14", earlyExit: "MUTUAL", paymentDays: "7",
   cureDays: "10", returnDays: "7", assignment: "SALE", specialTerms: "", towelReplacement: "0.00", bagReplacement: "0.00" };
@@ -54,10 +54,14 @@ export function ServiceAgreements({ customerId }: { customerId: string }) {
   function change<K extends keyof Form>(key: K, value: Form[K]) { nonce.current = crypto.randomUUID(); setForm(f => ({ ...f, [key]: value })); }
   function newDraft() {
     const t = chosen?.terms;
-    setForm(t ? { ...baseForm, ...t, endDate: t.endDate ?? "", noticeDays: String(t.noticeDays), paymentDays: String(t.paymentDays),
+    const representativeId = data.representatives.some((r: { id: string }) => r.id === t?.providerRepresentativeId) ? t!.providerRepresentativeId! : data.currentUserId;
+    const representative = data.representatives.find((r: { id: string }) => r.id === representativeId);
+    const next: Form = t ? { ...baseForm, ...t, endDate: t.endDate ?? "", noticeDays: String(t.noticeDays), paymentDays: String(t.paymentDays),
       cureDays: String(t.cureDays), returnDays: String(t.returnDays), specialTerms: t.specialTerms ?? "",
       towelReplacement: (t.towelReplacementCents / 100).toFixed(2), bagReplacement: (t.bagReplacementCents / 100).toFixed(2) } :
-      { ...baseForm, ...data.providerDefaults, customerLegalName: data.customer?.company || data.customer?.name || "", customerEmail: data.customer?.email || "", startDate: today() });
+      { ...baseForm, ...data.providerDefaults, customerLegalName: data.customer?.company || data.customer?.name || "", customerEmail: data.customer?.email || "", startDate: today() };
+    setForm({ ...next, providerLegalName: AGREEMENT_PROVIDER_NAME, providerAddress: AGREEMENT_PROVIDER_ADDRESS, providerRepresentativeId: representativeId,
+      providerSigner: representative?.name || "", providerEmail: representative?.email || "", providerTitle: "Authorized Representative" });
     setSupersedes(signed?.id ?? ""); setEditing(true); nonce.current = crypto.randomUUID(); setReviewed(false); setError("");
   }
   async function upload(e: React.FormEvent) {
@@ -117,12 +121,27 @@ export function ServiceAgreements({ customerId }: { customerId: string }) {
       }}>
         <h4 className="font-semibold">Parties and signatures</h4>
         <p className="text-xs text-gray-500">Use the actual business legal entities, not just trade names. No personal guaranty is included.</p>
+        <div className="rounded-md bg-gray-50 p-3 space-y-3">
+          <p className="text-sm"><strong>Provider:</strong> {AGREEMENT_PROVIDER_NAME}</p>
+          <Field label="Salesperson / Authorized Representative"><select required className={select} value={form.providerRepresentativeId} onChange={e => {
+            const representative = data.representatives.find((r: { id: string }) => r.id === e.target.value);
+            nonce.current = crypto.randomUUID();
+            setForm(f => ({ ...f, providerRepresentativeId: e.target.value, providerSigner: representative?.name || "",
+              providerEmail: representative?.email || "", providerTitle: "Authorized Representative" }));
+          }}>
+            <option value="">Select staff member or owner</option>
+            {data.representatives.map((r: { id: string; name: string; email: string }) => <option key={r.id} value={r.id}>{r.name} ({r.email})</option>)}
+          </select></Field>
+          <p className="text-sm">Notice email: {form.providerEmail || "Select a representative"}</p>
+          <p className="text-sm">Mailing address: {AGREEMENT_PROVIDER_ADDRESS}</p>
+          <p className="text-xs text-gray-500">The selected representative signs for CLW; their name and email are saved with this version.</p>
+        </div>
         <div className="grid sm:grid-cols-2 gap-3">
-          {input("providerLegalName", "Provider legal entity")}{input("customerLegalName", "Customer legal entity")}
-          {input("providerAddress", "Provider mailing address")}{input("customerAddress", "Customer mailing address")}
-          {input("providerEmail", "Provider notice email", "email")}{input("customerEmail", "Customer notice email", "email")}
-          {input("providerSigner", "Provider signer name")}{input("customerSigner", "Customer signer name")}
-          {input("providerTitle", "Provider signer title")}{input("customerTitle", "Customer signer title")}
+          {input("customerLegalName", "Customer legal entity")}
+          {input("customerAddress", "Customer mailing address")}
+          {input("customerEmail", "Customer notice email", "email")}
+          {input("customerSigner", "Customer signer name")}
+          {input("customerTitle", "Customer signer title")}
         </div>
         {input("serviceAddress", "Service / delivery address")}
         <h4 className="font-semibold">Term, renewal and cancellation</h4>

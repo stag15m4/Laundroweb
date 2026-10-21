@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { WdfError, text, key } from "@/lib/wdf-pricing";
-import { agreementTerms, agreementDocument, AGREEMENT_TEMPLATE_VERSION } from "@/lib/service-agreement";
+import { agreementTerms, agreementDocument, AGREEMENT_TEMPLATE_VERSION, AGREEMENT_PROVIDER_NAME, AGREEMENT_PROVIDER_ADDRESS } from "@/lib/service-agreement";
 import { agreementPdf } from "@/lib/agreement-pdf";
 
 type Actor = { id: string; name: string; role: string };
@@ -17,16 +17,22 @@ export const agreementSelect = {
 function audit(user: Actor, customerId: string, action: string, detail: Prisma.InputJsonValue) {
   return { customerId, action, actorId: user.id, actorName: user.name, detail };
 }
-export async function readAgreements(customerId: string | null) {
+export async function readAgreements(customerId: string | null, user: Actor) {
   if (!customerId) throw new WdfError("Select a customer.");
   const plan = await prisma.wdfLinenPlan.findUnique({ where: { customerId } });
   const customer = await prisma.wdfCustomer.findUnique({ where: { id: customerId }, select: { name: true, company: true, email: true } });
-  const recent = await prisma.wdfServiceAgreement.findFirst({ orderBy: { createdAt: "desc" }, select: { terms: true } });
-  const last = recent?.terms as Record<string, unknown> | undefined;
-  const providerDefaults = last ? Object.fromEntries(["providerLegalName", "providerAddress", "providerEmail", "providerSigner", "providerTitle"].map(k => [k, last[k]])) : {};
-  if (!plan) return { agreements: [], plan: null, customer, providerDefaults };
+  // User profiles have no active flag: deletion removes a representative from future choices.
+  // Only owners who can draft contracts need the staff directory.
+  const representatives = user.role === "OWNER" ? await prisma.user.findMany({
+    where: { role: { in: ["OWNER", "STAFF"] } },
+    select: { id: true, name: true, email: true }, orderBy: [{ name: "asc" }, { id: "asc" }],
+  }) : [];
+  const providerDefaults = { providerLegalName: AGREEMENT_PROVIDER_NAME,
+    providerAddress: AGREEMENT_PROVIDER_ADDRESS };
+  const defaults = { providerDefaults, representatives, currentUserId: user.id };
+  if (!plan) return { agreements: [], plan: null, customer, ...defaults };
   const agreements = await prisma.wdfServiceAgreement.findMany({ where: { planId: plan.id }, select: agreementSelect, orderBy: { version: "desc" }, take: 100 });
-  return { agreements, plan, customer, providerDefaults };
+  return { agreements, plan, customer, ...defaults };
 }
 export async function writeAgreement(tx: Prisma.TransactionClient, user: Actor, body: Record<string, unknown>, digest: string) {
   if (user.role !== "OWNER") throw new WdfError("Only an owner can create, issue or retire a service agreement.", 403);
@@ -42,7 +48,17 @@ export async function writeAgreement(tx: Prisma.TransactionClient, user: Actor, 
       return { agreement: existing };
     }
     if (!body.terms || typeof body.terms !== "object" || Array.isArray(body.terms)) throw new WdfError("Enter contract terms.");
-    const terms = agreementTerms(body.terms as Record<string, unknown>, plan);
+    const input = body.terms as Record<string, unknown>;
+    const representativeId = text(input.providerRepresentativeId, "Salesperson / authorized representative", 100, true)!;
+    const representative = await tx.user.findUnique({
+      where: { id: representativeId }, select: { id: true, name: true, email: true, role: true },
+    });
+    if (!representative || !["OWNER", "STAFF"].includes(representative.role))
+      throw new WdfError("Select a current staff member or owner as the representative.");
+    // Snapshot trusted profile values; never accept a typed name/email from the browser.
+    const terms = agreementTerms({ ...input, providerRepresentativeId: representative.id,
+      providerSigner: representative.name, providerEmail: representative.email,
+      providerTitle: "Authorized Representative" }, plan);
     const supersedesId = text(body.supersedesId, "Agreement to replace", 100);
     const previous = supersedesId ? await tx.wdfServiceAgreement.findUnique({ where: { id: supersedesId } }) : null;
     if (supersedesId && (!previous || previous.planId !== plan.id || previous.status !== "SIGNED"))

@@ -59,3 +59,8 @@ CI exercises term/date/party validation, authoritative pricing, multi-page PDF o
 font rejection, authorization, idempotent drafts/issues/uploads, immutable original
 bytes after price changes, signature-date/file retention, scan-overwrite rejection,
 supersession timing and evidence preservation after record retirement.
+
+## CLW provider and staff representatives
+New drafts use the fixed legal provider name Clinton Laundry Works, LLC. Owners select a current OWNER or STAFF user as Salesperson / Authorized Representative; the current user is the default for a new account. User profiles have no active flag, so all existing users in those roles appear. The server resolves the selected ID and snapshots the name and email, with the signature title Authorized Representative. Deleting a user removes future selection eligibility, without rewriting saved agreements. Only owners receive the representative directory through the agreement endpoint; drafting remains owner-only.
+
+The provider mailing address is fixed at 540 McKoy St, as supplied by the owner. Existing document text, issued PDFs and signed copies remain unchanged; a new version is required to use the fixed provider identity or another representative.

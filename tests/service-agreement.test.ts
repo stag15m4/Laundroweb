@@ -19,7 +19,8 @@ test("fixed and weekly terms are explicit; service prices come from plan", () =>
   assert.ok(agreementDocument(weekly).includes("week-to-week"));
 });
 test("dates, pricing and legal entity details are validated", () => {
-  assert.throws(() => agreementTerms({ ...contractInput, providerLegalName: "" }, contractPlan));
+  assert.equal(agreementTerms({ ...contractInput, providerLegalName: "Wrong company" }, contractPlan).providerLegalName, "Clinton Laundry Works, LLC");
+  assert.equal(agreementTerms({ ...contractInput, providerAddress: "Wrong address" }, contractPlan).providerAddress, "540 McKoy St");
   assert.throws(() => agreementTerms({ ...contractInput, endDate: "2026-01-01" }, contractPlan));
   assert.throws(() => agreementTerms({ ...contractInput, providerEmail: "bad" }, contractPlan));
   assert.throws(() => agreementTerms(contractInput, { ...contractPlan, weeklyFeeCents: null }));

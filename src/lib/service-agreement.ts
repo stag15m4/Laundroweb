@@ -1,9 +1,11 @@
 
 import { WdfError, integer, text } from "./wdf-pricing";
 
-export const AGREEMENT_TEMPLATE_VERSION = "1";
+export const AGREEMENT_TEMPLATE_VERSION = "2";
+export const AGREEMENT_PROVIDER_NAME = "Clinton Laundry Works, LLC";
+export const AGREEMENT_PROVIDER_ADDRESS = "540 McKoy St";
 export type AgreementTerms = {
-  providerLegalName: string; providerAddress: string; providerEmail: string;
+  providerRepresentativeId?: string; providerLegalName: string; providerAddress: string; providerEmail: string;
   customerLegalName: string; customerAddress: string; customerEmail: string;
   serviceAddress: string; providerSigner: string; providerTitle: string; customerSigner: string; customerTitle: string;
   startDate: string; termType: "WEEKLY" | "FIXED"; endDate: string | null;
@@ -45,8 +47,9 @@ export function agreementTerms(body: Record<string, unknown>, plan: {
   if (body.earlyExit !== "MUTUAL" && body.earlyExit !== "NOTICE") throw new WdfError("Choose a fixed-term early exit policy.");
   if (body.assignment !== "SALE" && body.assignment !== "CONSENT") throw new WdfError("Choose the assignment provision.");
   return {
-    providerLegalName: text(body.providerLegalName, "Provider legal name", 300, true)!,
-    providerAddress: text(body.providerAddress, "Provider mailing address", 500, true)!,
+    providerLegalName: AGREEMENT_PROVIDER_NAME,
+    providerRepresentativeId: text(body.providerRepresentativeId, "Provider representative", 100) ?? undefined,
+    providerAddress: AGREEMENT_PROVIDER_ADDRESS,
     providerEmail: email(body.providerEmail, "Provider notice email"),
     customerLegalName: text(body.customerLegalName, "Customer legal name", 300, true)!,
     customerAddress: text(body.customerAddress, "Customer mailing address", 500, true)!,

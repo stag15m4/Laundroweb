@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Header } from "@/components/layout/Header";
+import { PageTabs, EQUIPMENT_TABS } from "@/components/layout/PageTabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -242,6 +243,8 @@ export default function ClimatePage() {
           Refresh
         </Button>
       </Header>
+
+      <PageTabs tabs={EQUIPMENT_TABS} />
 
       <div className="p-6">
         {loading && (

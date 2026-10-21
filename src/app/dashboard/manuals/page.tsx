@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/layout/Header";
+import { PageTabs, EQUIPMENT_TABS } from "@/components/layout/PageTabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -249,6 +250,8 @@ function ManualsPageInner() {
           </Button>
         )}
       </Header>
+
+      <PageTabs tabs={EQUIPMENT_TABS} />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

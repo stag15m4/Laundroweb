@@ -9,6 +9,16 @@ interface Tab {
   href: string;
 }
 
+/** Shared by every page under the Equipment nav group, so they can't drift. */
+export const EQUIPMENT_TABS: Tab[] = [
+  { label: "Machines", href: "/dashboard/equipment" },
+  { label: "Parts", href: "/dashboard/parts" },
+  { label: "Maintenance", href: "/dashboard/maintenance" },
+  { label: "Pricing", href: "/dashboard/pricing" },
+  { label: "Manuals", href: "/dashboard/manuals" },
+  { label: "Climate", href: "/dashboard/climate" },
+];
+
 export function PageTabs({ tabs }: { tabs: Tab[] }) {
   const pathname = usePathname();
   return (

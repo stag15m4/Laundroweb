@@ -246,7 +246,8 @@ export default function RevenuePage() {
             {entries.length === 0 ? (
               <p className="text-sm text-gray-400 py-8 text-center">No revenue entries yet.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm whitespace-nowrap">
                 <thead>
                   <tr className="border-b border-gray-100 text-gray-500 text-xs">
                     <th className="text-left px-6 py-3">Date</th>
@@ -270,15 +271,15 @@ export default function RevenuePage() {
                         {e.machine?.name ?? (e.machineType ? MACHINE_TYPE_LABELS[e.machineType] ?? e.machineType : "—")}
                       </td>
                       <td className="px-6 py-3 text-gray-500">{e.collectedBy ?? "—"}</td>
-                      <td className="px-6 py-3 text-gray-400 max-w-xs">
+                      <td className="px-6 py-3 text-gray-400">
                         {note ? (
                           <button
                             type="button"
                             onClick={() => setNoteDetail(e)}
-                            className="text-left hover:text-gray-700 hover:underline underline-offset-2"
+                            aria-label={`View full note for ${formatDate(e.date)} ${e.machine?.name ?? (e.machineType ? MACHINE_TYPE_LABELS[e.machineType] ?? e.machineType : e.source)} entry`}
+                            className="block w-40 sm:w-64 truncate text-left hover:text-gray-700 hover:underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                           >
                             {note.summary}
-                            {note.truncated && <span className="text-gray-300"> …</span>}
                           </button>
                         ) : (
                           "—"
@@ -294,6 +295,7 @@ export default function RevenuePage() {
                   })}
                 </tbody>
               </table>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -331,7 +333,7 @@ export default function RevenuePage() {
               </div>
               <div className="pt-2 border-t border-gray-100">
                 <p className="text-gray-500 mb-1">Notes</p>
-                <p className="whitespace-pre-wrap text-gray-700">{noteDetail.notes}</p>
+                <p className="whitespace-pre-wrap break-words text-gray-700">{noteDetail.notes}</p>
               </div>
             </div>
           )}

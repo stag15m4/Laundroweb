@@ -1,9 +1,11 @@
 
+import { ServiceLocation } from "./wdf-location";
 export type Customer = {
   id: string; name: string; company: string | null; phone: string | null; email: string | null;
   preferences: string | null; notes: string | null; customRateCents: number | null; customMinimumCents: number | null;
   pricingExpiresAt: string | null; pricingReason: string | null; active: boolean; version: number;
   rateCents: number; minimumCents: number; pricingSource: string;
+  billingAddress: string | null; deliveryLocation: ServiceLocation | null;
   _count?: { orders: number }; audits?: Audit[];
 };
 export type Audit = { id: string; action: string; actorName: string; createdAt: string; detail: unknown };
@@ -18,6 +20,7 @@ export type Order = {
   status: string; dueAt: string | null; notes: string | null; machineNotes: string | null; laborMinutes: number;
   version: number; createdAt: string; createdByName: string;
   paidCents: number; balanceCents: number; paymentStatus: string;
+  billingAddress: string | null; fulfillment: "PICKUP" | "DELIVERY" | "LINEN" | null; serviceLocation: ServiceLocation | null;
   lines: { id: string; description: string; quantity: number; unitCents: number; totalCents: number }[];
   payments: Payment[]; audits: Audit[];
 };

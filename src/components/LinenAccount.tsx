@@ -2,11 +2,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { ServiceAgreements } from "@/components/ServiceAgreements";
+import { ServiceAddresses } from "@/components/ServiceAddresses";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { money, displayDate } from "@/lib/wdf-types";
 import { estimateTowels } from "@/lib/linen";
+import { ServiceLocation } from "@/lib/wdf-location";
 
 type Exchange = {
   id: string; kind: string; towelsOut: number; towelsIn: number; towelsLost: number;
@@ -20,7 +22,7 @@ type Plan = {
   notes: string | null; active: boolean; version: number; exchanges: Exchange[];
   charges: { weekStart: string; order: { id: string; number: number; status: string; totalCents: number } }[];
 };
-type Data = { customer: { id: string; name: string; active: boolean }; plan: Plan | null; balance: { towels: number; bags: number }; isOwner: boolean };
+type Data = { customer: { id: string; name: string; active: boolean; deliveryLocation: ServiceLocation | null; version: number }; plan: Plan | null; balance: { towels: number; bags: number }; isOwner: boolean };
 const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const box = "rounded-xl border border-gray-200 bg-white p-4 sm:p-6";
 const select = "w-full rounded-md border border-gray-300 bg-white p-2 text-sm";
@@ -38,7 +40,7 @@ async function request(customerId: string, body?: unknown): Promise<any> {
   const data = await r.json(); if (!r.ok) throw new Error(data.message || "Could not load rental account."); return data;
 }
 
-export function LinenAccount({ customerId, onOrder }: { customerId: string; onOrder?: (id: string) => void }) {
+export function LinenAccount({ customerId, onOrder, hideAddresses = false, addressVersion }: { customerId: string; onOrder?: (id: string) => void; hideAddresses?: boolean; addressVersion?: number }) {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -68,7 +70,7 @@ export function LinenAccount({ customerId, onOrder }: { customerId: string; onOr
         towelsLost: "0", bagsLost: "0", countMethod: "COUNTED", grossGrams: "", notes: "", reason: "" });
     }).catch(e => { if (current === generation.current) setError(e.message); });
     return () => { generation.current++; };
-  }, [customerId]);
+  }, [customerId, addressVersion]);
   async function save(body: Record<string, unknown>, done?: (result: any) => void) {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError(""); setNotice("");
@@ -90,6 +92,7 @@ export function LinenAccount({ customerId, onOrder }: { customerId: string; onOr
   function viewOrder(id: string) { if (onOrder) onOrder(id); else window.location.href = "/dashboard/wdf?orderId=" + encodeURIComponent(id); }
   if (!data) return <div className={box}>{error ? <p role="alert" className="text-red-700">{error}</p> : "Loading linen rental…"}</div>;
   return <section className="space-y-4">
+    {!hideAddresses && <ServiceAddresses key={customerId} customerId={customerId} onSaved={() => { reload().catch(e => setError(e.message)); }} />}
     <div className={box}>
       <div className="flex flex-wrap justify-between gap-3"><div><h3 className="font-semibold text-lg">Linen rental · {data.customer.name}</h3>
         <p className="text-sm text-gray-500">Reusable towels and bags assigned to this customer.</p></div>
@@ -130,7 +133,7 @@ export function LinenAccount({ customerId, onOrder }: { customerId: string; onOr
       </form>}
     </div>
 
-    {p && <><ServiceAgreements key={customerId} customerId={customerId} /><div className="grid lg:grid-cols-2 gap-4">
+    {p && <><ServiceAgreements key={customerId + ":" + data.customer.version} customerId={customerId} /><div className="grid lg:grid-cols-2 gap-4">
       <form className={box + " space-y-4"} onSubmit={e => {
         e.preventDefault(); save({ action: "linen.exchange", requestKey: requestKey.current, version: p.version,
           towelsOut: Number(exchange.towelsOut), towelsIn: Number(exchange.towelsIn), bagsOut: Number(exchange.bagsOut), bagsIn: Number(exchange.bagsIn),
@@ -155,6 +158,7 @@ export function LinenAccount({ customerId, onOrder }: { customerId: string; onOr
       </form>
       <div className={box + " space-y-4"}>
         <h4 className="font-semibold">Weekly rental invoice</h4>
+        {!data.customer.deliveryLocation && <p className="text-sm text-amber-800">Confirm the primary linen location above before creating a new invoice. Previously billed weeks can still be opened.</p>}
         <p className="text-sm">Uses the owner's agreed flat weekly price. Cash, check and card payments are recorded through the existing WDF invoice.</p>
         <form className="space-y-3" onSubmit={e => {
           e.preventDefault(); save({ action: "linen.bill", version: p.version, weekStart: week }, r => viewOrder(r.orderId));

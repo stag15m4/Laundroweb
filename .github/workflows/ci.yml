@@ -78,6 +78,9 @@ jobs:
       - name: WDF pricing tests
         run: node --import tsx --test tests/wdf-pricing.test.ts
 
+      - name: WDF geolocation and confirmation tests
+        run: node --import tsx --test tests/wdf-geolocation.test.ts
+
       - name: Linen custody and weekly billing tests
         run: node --import tsx --test tests/linen.test.ts
 

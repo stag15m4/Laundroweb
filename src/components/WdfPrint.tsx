@@ -22,6 +22,8 @@ export function WdfPrint({ id }: { id: string }) {
       <h1 className="text-2xl font-bold">Clinton Laundry Works</h1>
       <p className="mt-2 text-lg font-semibold">{ticket ? "WDF BAG TICKET" : order.status === "CANCELLED" ? "CANCELLED INVOICE" : order.balanceCents === 0 ? "PAID RECEIPT" : "WDF INVOICE"} #{order.number}</p>
       <div className="mt-6 grid grid-cols-2 gap-4"><div><p className="font-bold text-lg">{order.customerName}</p><p>{order.customerPhone}</p>{!ticket && <p>{order.customerEmail}</p>}</div><div><p>Received: {displayDate(order.createdAt)}</p><p>Promised pickup: {displayDate(order.dueAt)}</p><p>Status: {statusLabel(order.status)}</p></div></div>
+      {!ticket && order.billingAddress && <p className="mt-3 text-sm">Bill to: {order.billingAddress}</p>}
+      {order.serviceLocation && <div className="mt-3 text-sm"><p>{order.fulfillment === "PICKUP" ? "Customer pickup" : order.fulfillment === "LINEN" ? "Primary linen location" : "Delivery"}: {order.serviceLocation.inputAddress}</p><p>Service county: {order.serviceLocation.county}, {order.serviceLocation.state}</p></div>}
       {ticket ? <div className="mt-6 space-y-5">
         <p className="text-2xl font-bold">{(order.weightHundredths / 100).toFixed(2)} lb</p>
         <div><h2 className="font-semibold">Laundry preferences</h2><p className="whitespace-pre-wrap">{order.preferences || "None recorded"}</p></div>

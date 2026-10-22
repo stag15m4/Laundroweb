@@ -59,7 +59,7 @@ export function ServiceAgreements({ customerId }: { customerId: string }) {
     const next: Form = t ? { ...baseForm, ...t, endDate: t.endDate ?? "", noticeDays: String(t.noticeDays), paymentDays: String(t.paymentDays),
       cureDays: String(t.cureDays), returnDays: String(t.returnDays), specialTerms: t.specialTerms ?? "",
       towelReplacement: (t.towelReplacementCents / 100).toFixed(2), bagReplacement: (t.bagReplacementCents / 100).toFixed(2) } :
-      { ...baseForm, ...data.providerDefaults, customerLegalName: data.customer?.company || data.customer?.name || "", customerEmail: data.customer?.email || "", startDate: today() };
+      { ...baseForm, ...data.providerDefaults, customerLegalName: data.customer?.company || data.customer?.name || "", customerEmail: data.customer?.email || "", customerAddress: data.customer?.billingAddress || "", serviceAddress: data.customer?.deliveryLocation?.inputAddress || "", startDate: today() };
     setForm({ ...next, providerLegalName: AGREEMENT_PROVIDER_NAME, providerAddress: AGREEMENT_PROVIDER_ADDRESS, providerRepresentativeId: representativeId,
       providerSigner: representative?.name || "", providerEmail: representative?.email || "", providerTitle: "Authorized Representative" });
     setSupersedes(signed?.id ?? ""); setEditing(true); nonce.current = crypto.randomUUID(); setReviewed(false); setError("");

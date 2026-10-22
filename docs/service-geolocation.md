@@ -1,0 +1,20 @@
+# Laundry service addresses and geolocation
+
+Customer billing addresses and delivery / primary linen locations are separate. Existing accounts are unchanged until a user adds an address under WDF Customers or Linen rental. Both owners and staff can maintain addresses under the same permissions as customer contact details. All saves use the customer version and create a named audit entry.
+
+The authenticated, same-origin POST `/api/wdf/geocode` sends only the entered street address to the U.S. Census geographies API. No key or paid geocoding account is required. The service requests current address ranges and county geography, restricts matches to North Carolina, and returns candidates rather than silently selecting one. Census pins are address-range estimates; they are not rooftop, postal-deliverability or tax-rate certification. A user reviews the address, map pin and county, chooses a match, and confirms it. No match, ambiguous matches, invalid geography and upstream outages never assign a guessed county. ZIP codes do not determine the county.
+
+References:
+- https://geocoding.geo.census.gov/geocoder/Geocoding_Services_API.html
+- https://www.ncleg.gov/EnactedLegislation/Statutes/HTML/BySection/Chapter_105/GS_105-164.4B.html
+- NCDOR 2026 Sales and Use Tax Bulletins, SUTB 53-3: https://www.ncdor.gov/sutb-2026pdf/open
+
+Candidates carry an HMAC using NEXTAUTH_SECRET, scoped to the current user, customer and exact input address, with a 15-minute lifetime. Saving ignores arbitrary browser-supplied coordinates or counties. Lookup has a 10-second timeout, no cache, a fixed upstream URL, and a per-process limit of 10 requests per user per minute. API errors do not log the customer's address. Rotating NEXTAUTH_SECRET invalidates unsaved candidates but not saved addresses. User confirmation and geocoder source/time are retained in the location JSON. Unit/suite details are preserved in the original input even if Census omits them in the matched address. If the geocoder cannot match a real address, verify/correct the address before saving; there is no unaudited manual county override.
+
+New WDF orders explicitly choose customer pickup at CLW or delivery. Pickup snapshots CLW at 540 McKoy St, Clinton, NC 28328, Sampson County (37163); delivery requires a confirmed location and current customer version. Linen invoices require the customer's confirmed primary linen location. The account supports one current delivery / primary linen site: create separate customer accounts for distinct sites for now. The first rental receipt is assumed delivered to that site; counter-collected initial rentals at a different site require separate treatment before invoicing.
+
+Invoices snapshot billing address, fulfillment and service location. Updating or clearing the customer address does not rewrite existing invoices. Old invoices retain null locations and must not be silently assigned today's customer address. An already-billed linen week may still be opened even if an account's address is later removed. Print/PDF invoices and bag tickets display the saved service address. Contract drafts for new relationships prefill billing and service addresses; owners still review the legal entities and terms, and existing agreements remain unchanged.
+
+Scope: this change establishes location records and map links. It does not calculate/collect sales tax, produce tax returns, schedule pickups, optimize routes or change dashboard revenue. County and tax-rate verification and effective-dated rates remain part of the separate tax implementation. Do not treat the current invoice total as tax-inclusive or use location snapshots alone as a tax filing report.
+
+Deployment: five nullable columns are added through the existing schema-push deploy step. No existing invoice is backfilled or repriced. Test geocoding uses fixtures rather than a live upstream; CI also exercises authenticated address confirmation, stale/expired/tampered candidates, multi-county snapshots, address removal and linen invoicing rules.

@@ -604,6 +604,8 @@ model WdfCustomer {
   company String?
   phone String?
   email String?
+  billingAddress String?
+  deliveryLocation Json?
   preferences String?
   notes String?
   customRateCents Int?
@@ -630,6 +632,9 @@ model WdfOrder {
   customerName String
   customerPhone String?
   customerEmail String?
+  billingAddress String?
+  fulfillment String?
+  serviceLocation Json?
   preferences String?
   weightHundredths Int
   rateCents Int

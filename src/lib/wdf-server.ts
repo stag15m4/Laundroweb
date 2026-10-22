@@ -10,6 +10,8 @@ import { WdfError, integer, text, date, key, effectivePricing, quote, paymentBal
 import { readLinen, writeLinen } from "@/lib/linen-server";
 
 import { readAgreements, writeAgreement } from "@/lib/agreement-server";
+import { ServiceLocation, locationSnapshot } from "@/lib/wdf-location";
+import { verifyLocation } from "@/lib/wdf-geocode-token";
 
 type Actor = { id: string; name: string; role: string };
 const orderInclude = {
@@ -133,6 +135,29 @@ export async function write(req: NextRequest) {
       return await prisma.$transaction(async tx => {
         if (action?.startsWith("agreement.")) return writeAgreement(tx, user, body, digest);
         if (action?.startsWith("linen.")) return writeLinen(tx, user, body, digest);
+        if (action === "customer.addresses") {
+          const id = text(body.customerId, "Customer", 100, true)!;
+          const current = await tx.wdfCustomer.findUnique({ where: { id } });
+          if (!current) throw new WdfError("Customer not found.", 404);
+          if (current.version !== integer(body.version, "Customer version")) throw new WdfError("Customer changed. Reload before saving addresses.", 409);
+          const billingAddress = text(body.billingAddress, "Billing address", 500);
+          const address = text(body.deliveryAddress, "Delivery / primary linen address", 500);
+          const existing = current.deliveryLocation as ServiceLocation | null;
+          let location: ServiceLocation | null = null;
+          if (address) {
+            // Preserve a reviewed location when only the billing address is edited.
+            location = !body.locationToken && existing?.inputAddress === address ? existing :
+              { ...verifyLocation(body.locationToken, user.id, id, address), confirmedAt: new Date().toISOString(), confirmedById: user.id, confirmedByName: user.name };
+          }
+          const customer = await tx.wdfCustomer.update({ where: { id }, data: {
+            billingAddress, deliveryLocation: location ? JSON.parse(JSON.stringify(location)) : Prisma.DbNull,
+            version: { increment: 1 }, audits: { create: audit(user, "CUSTOMER_ADDRESSES_SAVED", {
+              before: { billingAddress: current.billingAddress, deliveryLocation: current.deliveryLocation },
+              after: { billingAddress, deliveryLocation: location ? JSON.parse(JSON.stringify(location)) : null },
+            }) },
+          } });
+          return { customer };
+        }
         if (action === "customer.create") {
           const fields = customerFields(body);
           if (user.role !== "OWNER" && ["customRateCents", "customMinimumCents", "pricingExpiresAt", "pricingReason"].some(k => body[k] != null && body[k] !== ""))
@@ -183,9 +208,17 @@ export async function write(req: NextRequest) {
           // Specialty prices are entered by the owner until a fixed item catalog is configured.
           if (lines.length) owner(user);
           const result = quote(weightHundredths, pricing.rateCents, pricing.minimumCents, lines);
+          const fulfillment = body.fulfillment ?? "PICKUP";
+          if (fulfillment !== "PICKUP" && fulfillment !== "DELIVERY") throw new WdfError("Choose customer pickup or delivery.");
+          if (fulfillment === "DELIVERY" && !customer.deliveryLocation) throw new WdfError("Look up and confirm the customer's delivery address before creating a delivery order.");
+          if (fulfillment === "DELIVERY" && body.customerVersion == null) throw new WdfError("Reload the customer before creating a delivery order.", 409);
+          if (body.customerVersion != null && customer.version !== integer(body.customerVersion, "Customer version"))
+            throw new WdfError("Customer details changed. Reload before creating the order.", 409);
+          const serviceLocation = locationSnapshot(fulfillment, customer.deliveryLocation as ServiceLocation | null)!;
           const order = await tx.wdfOrder.create({ data: {
             requestKey, requestDigest: digest, customerId, customerName: customer.name, customerPhone: customer.phone, customerEmail: customer.email,
             preferences: customer.preferences, ...pricing, pricingReason, weightHundredths,
+            billingAddress: customer.billingAddress, fulfillment, serviceLocation: JSON.parse(JSON.stringify(serviceLocation)),
             laundryCents: result.laundryCents, totalCents: result.totalCents,
             dueAt: date(body.dueAt, "Promised pickup"), notes: text(body.notes, "Order notes", 4000),
             createdById: user.id, createdByName: user.name,

@@ -28,7 +28,6 @@ const EQUIPMENT_PATHS = [
   "/dashboard/maintenance",
   "/dashboard/pricing",
   "/dashboard/manuals",
-  "/dashboard/climate",
 ];
 const FINANCE_PATHS = ["/dashboard/revenue", "/dashboard/expenses", "/dashboard/utilities", "/dashboard/reports"];
 

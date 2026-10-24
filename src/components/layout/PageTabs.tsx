@@ -16,7 +16,6 @@ export const EQUIPMENT_TABS: Tab[] = [
   { label: "Maintenance", href: "/dashboard/maintenance" },
   { label: "Pricing", href: "/dashboard/pricing" },
   { label: "Manuals", href: "/dashboard/manuals" },
-  { label: "Climate", href: "/dashboard/climate" },
 ];
 
 export function PageTabs({ tabs }: { tabs: Tab[] }) {

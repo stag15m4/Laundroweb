@@ -26,7 +26,7 @@ type Expense = {
 
 const categories = [
   "Supplies", "Repairs", "Labor", "Insurance", "Rent / Lease",
-  "Marketing", "Software", "Professional Services", "Miscellaneous",
+  "Marketing", "Software", "Professional Services", "Refunds", "Miscellaneous",
 ];
 
 const emptyForm = { date: format(new Date(), "yyyy-MM-dd"), category: "Supplies", description: "", amount: "", vendor: "", notes: "" };

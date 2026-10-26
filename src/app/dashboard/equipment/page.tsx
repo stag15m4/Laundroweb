@@ -124,6 +124,15 @@ type MaintenanceLog = {
   partsUsed?: PartUsed[];
 };
 
+type MaintenanceSchedule = {
+  id: string;
+  title: string;
+  machineId: string | null;
+  machineType: string | null;
+  isBuilding: boolean;
+  frequencyDays: number;
+};
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const ZONES = [
@@ -220,6 +229,7 @@ const emptyLogForm = () => ({
   technician: "",
   vendor: "",
   nextDueDate: "",
+  scheduleId: "",
 });
 
 const emptyMachineForm = {
@@ -400,6 +410,7 @@ function MachineDetailModal({
   isOwner,
   parts,
   manuals,
+  schedules,
 }: {
   machine: Machine | null | undefined;
   open: boolean;
@@ -413,6 +424,7 @@ function MachineDetailModal({
   isOwner: boolean;
   parts: PartInventory[];
   manuals: ManualDoc[];
+  schedules: MaintenanceSchedule[];
 }) {
   const [mode, setMode] = useState<"maintenance" | "setup">("maintenance");
   const [logs, setLogs] = useState<MaintenanceLog[]>([]);
@@ -503,6 +515,12 @@ function MachineDetailModal({
   const iconColor = isBuilding ? "text-gray-600" : (typeColor[machine?.type ?? ""] ?? "text-gray-400");
   const dot = isBuilding ? "bg-gray-400" : (statusDot[machine?.status ?? ""] ?? "bg-gray-200");
 
+  // Scheduled tasks this log entry could fulfill: this building, this exact
+  // machine, or any task covering all machines of this machine's type.
+  const matchingSchedules = schedules.filter((s) =>
+    isBuilding ? s.isBuilding : s.machineId ? s.machineId === machine?.id : s.machineType === machine?.type
+  );
+
   async function submitLog(e: React.FormEvent) {
     e.preventDefault();
     const machineId = isBuilding ? null : (machine?.id ?? null);
@@ -511,6 +529,7 @@ function MachineDetailModal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         machineId,
+        scheduleId: logForm.scheduleId || null,
         date: logForm.date,
         type: logForm.type,
         description: logForm.description,
@@ -999,6 +1018,33 @@ function MachineDetailModal({
                       required
                     />
                   </div>
+                  {matchingSchedules.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label>Fulfills scheduled task (optional)</Label>
+                      <Select
+                        value={logForm.scheduleId || "none"}
+                        onValueChange={(v) =>
+                          setLogForm((f) => ({ ...f, scheduleId: v === "none" ? "" : v }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {matchingSchedules.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-400">
+                        Marks that scheduled task done too, so the Maintenance
+                        Schedule page stays in sync with this log.
+                      </p>
+                    </div>
+                  )}
                   {!showMore ? (
                     <button
                       type="button"
@@ -1557,6 +1603,7 @@ export default function EquipmentPage() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [parts, setParts] = useState<PartInventory[]>([]);
   const [manuals, setManuals] = useState<ManualDoc[]>([]);
+  const [schedules, setSchedules] = useState<MaintenanceSchedule[]>([]);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null | undefined>(undefined);
 
   // Which machines are ticked for export. Keyed by id so a selection survives
@@ -1578,6 +1625,9 @@ export default function EquipmentPage() {
     fetch("/api/equipment").then((r) => r.json()).then(setMachines);
     fetch("/api/parts").then((r) => r.json()).then(setParts);
     fetch("/api/manuals").then((r) => r.json()).then(setManuals);
+    fetch("/api/maintenance/schedule").then((r) => r.json()).then((d) => {
+      if (Array.isArray(d)) setSchedules(d);
+    });
   }, []);
 
   function handlePartsChanged(partId: string, delta: number) {
@@ -2327,6 +2377,7 @@ export default function EquipmentPage() {
         isOwner={isOwner}
         parts={parts}
         manuals={manuals}
+        schedules={schedules}
       />
     </div>
   );

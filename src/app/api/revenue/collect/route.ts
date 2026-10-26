@@ -6,9 +6,19 @@ import { prisma } from "@/lib/prisma";
 import { coinWeightToDollars, fascardCategoryTotals, WeightUnit } from "@/lib/revenueCollection";
 
 class PeriodOverlapError extends Error {
+  // lastCollectionEnd is the raw ISO instant -- the client re-renders it in
+  // the viewer's own timezone rather than trusting a server-rendered string,
+  // since this server has no idea what "local" means for whoever's reading it.
   constructor(public lastCollectionEnd: string) {
     super(`This period starts before your last saved collection ended (${lastCollectionEnd}).`);
   }
+}
+
+// A human-readable instant for the notes text. Expressed in UTC and labeled
+// as such -- this route runs wherever it's deployed, not necessarily in the
+// shop's own timezone, so claiming a "local" time here would just be a guess.
+function labelInstant(d: Date): string {
+  return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 
 type Weight = { value: number; unit: WeightUnit };
@@ -77,7 +87,7 @@ export async function POST(req: NextRequest) {
   const washerCoinDollars = washerCoinWeight ? coinWeightToDollars(washerCoinWeight.value, washerCoinWeight.unit) : 0;
   const dryerCoinDollars = dryerCoinWeight ? coinWeightToDollars(dryerCoinWeight.value, dryerCoinWeight.unit) : 0;
 
-  const periodLabel = `${periodStart.toISOString().slice(0, 10)} to ${periodEnd.toISOString().slice(0, 10)}`;
+  const periodLabel = `${labelInstant(periodStart)} to ${labelInstant(periodEnd)}`;
   const changerNote =
     changerCash != null
       ? ` Cash removed from the coin changer this round: $${changerCash.toFixed(2)} (not counted as revenue -- it's bills already exchanged for quarters, not new money).`
@@ -182,9 +192,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const periodStartDay = periodStart.toISOString().slice(0, 10);
-  const periodEndDay = periodEnd.toISOString().slice(0, 10);
-
   try {
     const created = await prisma.$transaction(
       async (tx) => {
@@ -195,8 +202,12 @@ export async function POST(req: NextRequest) {
         // the same period. Serializable makes Postgres abort one of them
         // instead (caught below as P2034) rather than let that race through.
         const cursor = await tx.setting.findUnique({ where: { key: "revenue.lastCollectionEnd" } });
-        if (cursor && !confirmOverlap && periodStartDay < cursor.value) {
-          throw new PeriodOverlapError(cursor.value);
+        // Timestamp comparison, not a string one -- the cursor may still hold
+        // a legacy day-only value ("2026-10-20") from before periods carried
+        // time-of-day; Date parses that fine as that day's UTC midnight.
+        const cursorMs = cursor ? new Date(cursor.value).getTime() : null;
+        if (cursorMs != null && !Number.isNaN(cursorMs) && !confirmOverlap && periodStart.getTime() < cursorMs) {
+          throw new PeriodOverlapError(cursor!.value);
         }
 
         const entries = await Promise.all(
@@ -217,8 +228,8 @@ export async function POST(req: NextRequest) {
 
         await tx.setting.upsert({
           where: { key: "revenue.lastCollectionEnd" },
-          update: { value: periodEndDay },
-          create: { key: "revenue.lastCollectionEnd", value: periodEndDay },
+          update: { value: periodEnd.toISOString() },
+          create: { key: "revenue.lastCollectionEnd", value: periodEnd.toISOString() },
         });
 
         return entries;

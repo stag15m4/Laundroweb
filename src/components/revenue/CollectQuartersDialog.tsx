@@ -10,10 +10,14 @@ import { formatCurrency } from "@/lib/utils";
 import { Coins, RefreshCw } from "lucide-react";
 import { format, subDays } from "date-fns";
 
-// datetime-local wants "yyyy-MM-ddTHH:mm" in the viewer's own local time --
-// no timezone suffix, so the browser interprets (and round-trips) it as
+// datetime-local wants "yyyy-MM-ddTHH:mm:ss" in the viewer's own local time
+// -- no timezone suffix, so the browser interprets (and round-trips) it as
 // whatever "local" means on the machine actually doing the collecting.
-const DATETIME_LOCAL_FORMAT = "yyyy-MM-dd'T'HH:mm";
+// Seconds matter here: the default start is carried over to the second from
+// the previous collection's end, and truncating them on format would quietly
+// round it to the start of that minute, re-asking FasCard about time already
+// covered (dropping the seconds entirely, not just displaying them rounded).
+const DATETIME_LOCAL_FORMAT = "yyyy-MM-dd'T'HH:mm:ss";
 
 type CategoryTotals = {
   cash: number;
@@ -105,17 +109,21 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
     setChangerCash("");
     setCollectedBy("");
 
-    // The next period logically begins the instant the last one ended --
-    // one second after, so it never re-covers a moment FasCard was already
-    // asked about. Falls back to 7 days ago if there's no prior collection
-    // (first-ever run) or the saved cursor can't be parsed.
+    // The next period logically begins the instant the last one ended.
+    // FasCard windows (and the overlap check below) are already half-open --
+    // [start, end) -- so the previous period never actually included its own
+    // end instant. The next one should start exactly there, not a second
+    // later: advancing past it would leave that instant uncovered by either
+    // period, silently dropping anything that landed in the gap. Falls back
+    // to 7 days ago if there's no prior collection (first-ever run) or the
+    // saved cursor can't be parsed.
     let start = subDays(new Date(), 7);
     try {
       const res = await fetch("/api/settings?key=revenue.lastCollectionEnd");
       const data = await res.json();
       if (data?.value) {
         const lastEnd = new Date(data.value);
-        if (!Number.isNaN(lastEnd.getTime())) start = new Date(lastEnd.getTime() + 1000);
+        if (!Number.isNaN(lastEnd.getTime())) start = lastEnd;
       }
     } catch {
       // Fall back to the 7-day default above.
@@ -212,6 +220,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
                 <Label>Period start</Label>
                 <Input
                   type="datetime-local"
+                  step="1"
                   value={periodStart}
                   onChange={(e) => setPeriodStart(e.target.value)}
                   onBlur={() => fetchPreview(periodStart, periodEnd)}
@@ -221,6 +230,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
                 <Label>Period end</Label>
                 <Input
                   type="datetime-local"
+                  step="1"
                   value={periodEnd}
                   onChange={(e) => setPeriodEnd(e.target.value)}
                   onBlur={() => fetchPreview(periodStart, periodEnd)}
@@ -228,9 +238,9 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
               </div>
             </div>
             <p className="text-xs text-gray-400">
-              Start defaults to one second after your last saved collection ended, so periods
-              never gap or overlap. Adjust it yourself if a collection was made while the app
-              was unavailable.
+              Start defaults to exactly when your last saved collection ended, so periods never
+              gap or overlap. Adjust it yourself if a collection was made while the app was
+              unavailable.
             </p>
 
             <div className="rounded-lg border border-gray-200 p-3">

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { buildServiceHistoryPdf, type HistoryResponse } from "@/lib/service-history-pdf";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, CheckCircle2, Clock, AlertTriangle, Wrench, X, Copy, FileDown } from "lucide-react";
+import { Plus, CheckCircle2, Clock, AlertTriangle, Wrench, X, Copy, FileDown, Pencil } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -89,12 +89,14 @@ function ScheduleCard({
   onComplete,
   onDelete,
   onCopy,
+  onEdit,
 }: {
   schedule: Schedule;
   isOwner: boolean;
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   onCopy: (s: Schedule) => void;
+  onEdit: (s: Schedule) => void;
 }) {
   const [completing, setCompleting] = useState(false);
   const days = daysUntil(schedule.nextDueAt);
@@ -167,6 +169,13 @@ function ScheduleCard({
             {completing ? "Saving…" : "Done"}
           </Button>
           <button
+            onClick={() => onEdit(schedule)}
+            className="p-1.5 text-gray-300 hover:text-blue-400 transition-colors"
+            title="Edit task"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button
             onClick={() => onCopy(schedule)}
             className="p-1.5 text-gray-300 hover:text-blue-400 transition-colors"
             title="Copy task"
@@ -197,6 +206,7 @@ export default function MaintenancePage() {
   const [addOpen, setAddOpen] = useState(false);
   const [dialogTitle, setDialogTitle] = useState("Add Maintenance Task");
   const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/maintenance/schedule").then((r) => r.json()).then((d) => {
@@ -218,18 +228,24 @@ export default function MaintenancePage() {
       machineType: form.scope === "type" ? form.machineType : null,
       machineId: form.scope === "machine" ? form.machineId : null,
     };
-    const res = await fetch("/api/maintenance/schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = await fetch(
+      editingId ? `/api/maintenance/schedule/${editingId}` : "/api/maintenance/schedule",
+      {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
     if (res.ok) {
-      const created = await res.json();
-      setSchedules((prev) => [...prev, created].sort((a, b) =>
-        new Date(a.nextDueAt ?? "9999").getTime() - new Date(b.nextDueAt ?? "9999").getTime()
-      ));
+      const saved = await res.json();
+      setSchedules((prev) =>
+        (editingId ? prev.map((s) => (s.id === saved.id ? saved : s)) : [...prev, saved]).sort(
+          (a, b) => new Date(a.nextDueAt ?? "9999").getTime() - new Date(b.nextDueAt ?? "9999").getTime()
+        )
+      );
       setAddOpen(false);
       setForm(emptyForm);
+      setEditingId(null);
       setDialogTitle("Add Maintenance Task");
     }
   }
@@ -260,7 +276,24 @@ export default function MaintenancePage() {
       frequencyDays: String(s.frequencyDays),
       notes: s.notes ?? "",
     });
+    setEditingId(null);
     setDialogTitle("Copy Task");
+    setAddOpen(true);
+  }
+
+  function handleEdit(s: Schedule) {
+    const scope = s.machineId ? "machine" : s.machineType ? "type" : "building";
+    setForm({
+      title: s.title,
+      description: s.description ?? "",
+      scope,
+      machineId: s.machineId ?? "",
+      machineType: s.machineType ?? "WASHER",
+      frequencyDays: String(s.frequencyDays),
+      notes: s.notes ?? "",
+    });
+    setEditingId(s.id);
+    setDialogTitle("Edit Task");
     setAddOpen(true);
   }
 
@@ -323,7 +356,7 @@ export default function MaintenancePage() {
       <div className="space-y-2">
         <h3 className={`text-xs font-bold uppercase tracking-widest ${accent ?? "text-gray-500"}`}>{title}</h3>
         {items.map((s) => (
-          <ScheduleCard key={s.id} schedule={s} isOwner={isOwner} onComplete={handleComplete} onDelete={handleDelete} onCopy={handleCopy} />
+          <ScheduleCard key={s.id} schedule={s} isOwner={isOwner} onComplete={handleComplete} onDelete={handleDelete} onCopy={handleCopy} onEdit={handleEdit} />
         ))}
       </div>
     );
@@ -337,7 +370,7 @@ export default function MaintenancePage() {
           Service History
         </Button>
         {isOwner && (
-          <Button onClick={() => { setForm(emptyForm); setDialogTitle("Add Maintenance Task"); setAddOpen(true); }}>
+          <Button onClick={() => { setForm(emptyForm); setEditingId(null); setDialogTitle("Add Maintenance Task"); setAddOpen(true); }}>
             <Plus className="h-4 w-4 mr-2" />
             Add Task
           </Button>
@@ -420,7 +453,7 @@ export default function MaintenancePage() {
       </div>
 
       {/* Add task dialog */}
-      <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) setForm(emptyForm); }}>
+      <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) { setForm(emptyForm); setEditingId(null); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{dialogTitle}</DialogTitle></DialogHeader>
           <form onSubmit={handleAdd} className="space-y-4">
@@ -497,7 +530,7 @@ export default function MaintenancePage() {
               </div>
             )}
 
-            <Button type="submit" className="w-full">Add Task</Button>
+            <Button type="submit" className="w-full">{editingId ? "Save Changes" : "Add Task"}</Button>
           </form>
         </DialogContent>
       </Dialog>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { calcNextDue } from "@/lib/maintenanceSchedule";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -53,32 +54,58 @@ export async function POST(req: NextRequest) {
     },
   };
 
-  if (parts.length === 0) {
-    const log = await prisma.maintenanceLog.create({ data: logData, include });
-    return NextResponse.json(log, { status: 201 });
+  // Logging a service can optionally fulfill a recurring MaintenanceSchedule
+  // task (e.g. "Clean Trough Filter — Weekly") -- without this, the schedule
+  // page and a machine's own service history silently disagree: the history
+  // shows the work was done, but the schedule still reads "Never completed"
+  // and counts down from its old due date.
+  let schedule: { id: string; frequencyDays: number } | null = null;
+  if (body.scheduleId) {
+    schedule = await prisma.maintenanceSchedule.findUnique({
+      where: { id: body.scheduleId },
+      select: { id: true, frequencyDays: true },
+    });
+    if (!schedule) {
+      return NextResponse.json({ error: "That maintenance task no longer exists." }, { status: 400 });
+    }
   }
 
-  // Atomic: create log + part usage records + decrement inventory
+  // Single transaction regardless of parts, so a log is never created without
+  // its part usage / schedule update, or vice versa.
   const log = await prisma.$transaction(async (tx) => {
     const created = await tx.maintenanceLog.create({ data: logData, include });
-    await Promise.all(
-      parts.map(({ partId, quantityUsed }) =>
-        tx.maintenancePartUsage.create({
-          data: { maintenanceLogId: created.id, partId, quantityUsed },
-        })
-      )
-    );
-    await Promise.all(
-      parts.map(({ partId, quantityUsed }) =>
-        tx.partInventory.update({
-          where: { id: partId },
-          data: { quantity: { decrement: quantityUsed } },
-        })
-      )
-    );
-    // Re-fetch with full includes after creating usages
+
+    if (parts.length > 0) {
+      await Promise.all(
+        parts.map(({ partId, quantityUsed }) =>
+          tx.maintenancePartUsage.create({
+            data: { maintenanceLogId: created.id, partId, quantityUsed },
+          })
+        )
+      );
+      await Promise.all(
+        parts.map(({ partId, quantityUsed }) =>
+          tx.partInventory.update({
+            where: { id: partId },
+            data: { quantity: { decrement: quantityUsed } },
+          })
+        )
+      );
+    }
+
+    if (schedule) {
+      await tx.maintenanceSchedule.update({
+        where: { id: schedule.id },
+        data: {
+          lastCompletedAt: logData.date,
+          nextDueAt: calcNextDue(schedule.frequencyDays, logData.date),
+        },
+      });
+    }
+
+    // Re-fetch with full includes in case parts usage was just attached.
     return tx.maintenanceLog.findUniqueOrThrow({ where: { id: created.id }, include });
   });
 
-  return NextResponse.json(log, { status: 201 });
+  return NextResponse.json({ ...log, scheduleUpdated: Boolean(schedule) }, { status: 201 });
 }

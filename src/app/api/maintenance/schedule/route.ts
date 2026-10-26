@@ -2,12 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-function calcNextDue(frequencyDays: number, from: Date = new Date()): Date {
-  const d = new Date(from);
-  d.setDate(d.getDate() + frequencyDays);
-  return d;
-}
+import { calcNextDue } from "@/lib/maintenanceSchedule";
 
 export async function GET() {
   const session = await getServerSession(authOptions);

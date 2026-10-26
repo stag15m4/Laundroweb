@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAlfredToken, alfredUnauthorized } from "@/lib/alfred-auth";
+import { alfredError } from "@/lib/alfred-write";
+import { alfredDateRange } from "@/lib/alfred-dates";
 import { prisma } from "@/lib/prisma";
 import { RevenueSource } from "@prisma/client";
 
@@ -11,11 +13,14 @@ export async function GET(req: NextRequest) {
   const to = p.get("to");
   const source = p.get("source") as RevenueSource | null;
 
+  const range = alfredDateRange(from, to);
+  if (range === null) {
+    return alfredError(400, "invalid_date", "`from` and `to` must be valid dates, e.g. 2026-10-26.");
+  }
+
   const entries = await prisma.revenueEntry.findMany({
     where: {
-      ...(from || to
-        ? { date: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } }
-        : {}),
+      ...(range ? { date: range } : {}),
       ...(source && Object.values(RevenueSource).includes(source) ? { source } : {}),
     },
     select: {

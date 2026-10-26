@@ -10,10 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, Trash2, DollarSign } from "lucide-react";
+import { Plus, Trash2, Pencil, DollarSign } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { format, startOfMonth, eachDayOfInterval, endOfMonth } from "date-fns";
 
@@ -54,7 +54,7 @@ export default function RevenuePage() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [open, setOpen] = useState(false);
   const [noteDetail, setNoteDetail] = useState<RevenueEntry | null>(null);
-  const [form, setForm] = useState({
+  const emptyForm = {
     date: format(new Date(), "yyyy-MM-dd"),
     amount: "",
     source: "COIN",
@@ -62,7 +62,15 @@ export default function RevenuePage() {
     machineType: "",
     notes: "",
     collectedBy: "",
-  });
+  };
+  const [form, setForm] = useState(emptyForm);
+  // Set only while editing: the full original timestamp of the entry being
+  // edited, so saving an edit to (say) "Collected By" on a quarter-collection
+  // entry doesn't silently round its precise collection time down to
+  // midnight -- the date input only offers a calendar day, so the original
+  // time-of-day is reapplied to whatever day comes out of the form.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingOriginalDate, setEditingOriginalDate] = useState<string | null>(null);
 
   function refreshEntries() {
     fetch("/api/revenue").then((r) => r.json()).then(setEntries);
@@ -87,18 +95,64 @@ export default function RevenuePage() {
     });
   })();
 
-  async function handleAdd(e: React.FormEvent) {
+  function openAdd() {
+    setEditingId(null);
+    setEditingOriginalDate(null);
+    setForm(emptyForm);
+    setOpen(true);
+  }
+
+  function openEdit(entry: RevenueEntry) {
+    setEditingId(entry.id);
+    setEditingOriginalDate(entry.date);
+    setForm({
+      date: format(new Date(entry.date), "yyyy-MM-dd"),
+      amount: entry.amount,
+      source: entry.source,
+      machineId: entry.machine?.id ?? "",
+      machineType: entry.machineType ?? "",
+      notes: entry.notes ?? "",
+      collectedBy: entry.collectedBy ?? "",
+    });
+    setOpen(true);
+  }
+
+  // Combines the form's chosen calendar day with the original entry's own
+  // time-of-day (in the browser's local time, same as the date input means
+  // it) -- so editing a field that isn't the date never moves the instant.
+  function withPreservedTime(dateOnly: string, originalIso: string): string {
+    const original = new Date(originalIso);
+    // If the calendar date wasn't touched, hand back the original instant
+    // untouched rather than reconstructing it. setFullYear sets the local
+    // Y-M-D while keeping the local H:M:S, but during a DST fall-back the
+    // 1-2am hour happens twice; asked to rebuild an unambiguous instant
+    // that fell in the second occurrence, it silently resolves to the
+    // first instead, moving the timestamp an hour early even though
+    // nothing about the date actually changed.
+    if (format(original, "yyyy-MM-dd") === dateOnly) return originalIso;
+    const [y, m, d] = dateOnly.split("-").map(Number);
+    const combined = new Date(original);
+    combined.setFullYear(y, m - 1, d);
+    return combined.toISOString();
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const res = await fetch("/api/revenue", {
-      method: "POST",
+    const date = editingId && editingOriginalDate ? withPreservedTime(form.date, editingOriginalDate) : form.date;
+    const res = await fetch(editingId ? `/api/revenue/${editingId}` : "/api/revenue", {
+      method: editingId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, date }),
     });
     if (res.ok) {
       const entry = await res.json();
-      setEntries((prev) => [entry, ...prev]);
+      setEntries((prev) =>
+        editingId ? prev.map((x) => (x.id === entry.id ? entry : x)) : [entry, ...prev]
+      );
       setOpen(false);
-      setForm({ date: format(new Date(), "yyyy-MM-dd"), amount: "", source: "COIN", machineId: "", machineType: "", notes: "", collectedBy: "" });
+      setEditingId(null);
+      setEditingOriginalDate(null);
+      setForm(emptyForm);
     }
   }
 
@@ -113,18 +167,16 @@ export default function RevenuePage() {
       <Header title="Revenue" description="Track coin vault collections and card payments">
         <div className="flex items-center gap-2">
           {isOwner && <CollectQuartersDialog onSaved={refreshEntries} />}
-          <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Entry
-            </Button>
-          </DialogTrigger>
+          <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditingId(null); setEditingOriginalDate(null); setForm(emptyForm); } }}>
+          <Button onClick={openAdd}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Entry
+          </Button>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Revenue Entry</DialogTitle>
+              <DialogTitle>{editingId ? "Edit Revenue Entry" : "Add Revenue Entry"}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleAdd} className="space-y-4">
+            <form onSubmit={handleSave} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Date</Label>
@@ -182,7 +234,7 @@ export default function RevenuePage() {
                 <Label>Notes</Label>
                 <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
               </div>
-              <Button type="submit" className="w-full">Save Entry</Button>
+              <Button type="submit" className="w-full">{editingId ? "Save Changes" : "Save Entry"}</Button>
             </form>
           </DialogContent>
           </Dialog>
@@ -286,9 +338,14 @@ export default function RevenuePage() {
                         )}
                       </td>
                       <td className="px-6 py-3">
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}>
-                          <Trash2 className="h-4 w-4 text-red-400" />
-                        </Button>
+                        <div className="flex items-center">
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(e)}>
+                            <Pencil className="h-4 w-4 text-gray-400" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}>
+                            <Trash2 className="h-4 w-4 text-red-400" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                     );

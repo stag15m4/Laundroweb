@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fascardCategoryTotals } from "@/lib/revenueCollection";
 
-// GET /api/revenue/collect/preview?start=YYYY-MM-DD&end=YYYY-MM-DD
+// GET /api/revenue/collect/preview?start=<ISO datetime>&end=<ISO datetime>
 // Read-only look at what a collection would pull from FasCard for the given
 // window, before anything is saved. The actual save recomputes this itself
 // rather than trusting whatever the client last previewed, so this is purely

@@ -10,6 +10,15 @@ import { formatCurrency } from "@/lib/utils";
 import { Coins, RefreshCw } from "lucide-react";
 import { format, subDays } from "date-fns";
 
+// datetime-local wants "yyyy-MM-ddTHH:mm:ss" in the viewer's own local time
+// -- no timezone suffix, so the browser interprets (and round-trips) it as
+// whatever "local" means on the machine actually doing the collecting.
+// Seconds matter here: the default start is carried over to the second from
+// the previous collection's end, and truncating them on format would quietly
+// round it to the start of that minute, re-asking FasCard about time already
+// covered (dropping the seconds entirely, not just displaying them rounded).
+const DATETIME_LOCAL_FORMAT = "yyyy-MM-dd'T'HH:mm:ss";
+
 type CategoryTotals = {
   cash: number;
   card: number;
@@ -33,10 +42,22 @@ function weightDollars(weight: Weight): number {
   return weight.unit === "g" ? value / 22.68 : value / 0.8;
 }
 
+// A datetime-local value has no timezone -- it means whatever "local" is on
+// the device filling it in. Sent as-is, the server would parse it in ITS
+// own local time instead (likely UTC in production), silently shifting the
+// window by however many hours apart the two are. Resolving it to a real
+// instant here, in the browser that knows what "local" actually means,
+// keeps the two in agreement regardless of where the server runs.
+function toIso(datetimeLocal: string): string | null {
+  if (!datetimeLocal) return null;
+  const d = new Date(datetimeLocal);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
   const [open, setOpen] = useState(false);
   const [periodStart, setPeriodStart] = useState("");
-  const [periodEnd, setPeriodEnd] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [periodEnd, setPeriodEnd] = useState(format(new Date(), DATETIME_LOCAL_FORMAT));
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
@@ -52,11 +73,15 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
   const [savedSummary, setSavedSummary] = useState<{ washerTotal: number; dryerTotal: number } | null>(null);
 
   async function fetchPreview(start: string, end: string) {
-    if (!start || !end) return;
+    const startIso = toIso(start);
+    const endIso = toIso(end);
+    if (!startIso || !endIso) return;
     setPreviewLoading(true);
     setPreviewError("");
     try {
-      const res = await fetch(`/api/revenue/collect/preview?start=${start}&end=${end}`);
+      const res = await fetch(
+        `/api/revenue/collect/preview?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`
+      );
       const data = await res.json();
       if (!res.ok) {
         setPreviewError(data.error ?? "Failed to load FasCard preview.");
@@ -84,21 +109,39 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
     setChangerCash("");
     setCollectedBy("");
 
-    let start = format(subDays(new Date(), 7), "yyyy-MM-dd");
+    // The next period logically begins the instant the last one ended.
+    // FasCard windows (and the overlap check below) are already half-open --
+    // [start, end) -- so the previous period never actually included its own
+    // end instant. The next one should start exactly there, not a second
+    // later: advancing past it would leave that instant uncovered by either
+    // period, silently dropping anything that landed in the gap. Falls back
+    // to 7 days ago if there's no prior collection (first-ever run) or the
+    // saved cursor can't be parsed.
+    let start = subDays(new Date(), 7);
     try {
       const res = await fetch("/api/settings?key=revenue.lastCollectionEnd");
       const data = await res.json();
-      if (data?.value) start = data.value;
+      if (data?.value) {
+        const lastEnd = new Date(data.value);
+        if (!Number.isNaN(lastEnd.getTime())) start = lastEnd;
+      }
     } catch {
-      // Fall back to the 7-day default below.
+      // Fall back to the 7-day default above.
     }
-    const end = format(new Date(), "yyyy-MM-dd");
-    setPeriodStart(start);
-    setPeriodEnd(end);
-    fetchPreview(start, end);
+    const startStr = format(start, DATETIME_LOCAL_FORMAT);
+    const endStr = format(new Date(), DATETIME_LOCAL_FORMAT);
+    setPeriodStart(startStr);
+    setPeriodEnd(endStr);
+    fetchPreview(startStr, endStr);
   }
 
   async function handleSave(confirmOverlap = false) {
+    const periodStartIso = toIso(periodStart);
+    const periodEndIso = toIso(periodEnd);
+    if (!periodStartIso || !periodEndIso) {
+      setSaveError("Period start and end must be valid dates/times.");
+      return;
+    }
     setSaving(true);
     setSaveError("");
     setOverlapWarning(null);
@@ -107,8 +150,8 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          periodStart,
-          periodEnd,
+          periodStart: periodStartIso,
+          periodEnd: periodEndIso,
           washerCoinWeight: washerWeight.value ? { value: Number(washerWeight.value), unit: washerWeight.unit } : null,
           dryerCoinWeight: dryerWeight.value ? { value: Number(dryerWeight.value), unit: dryerWeight.unit } : null,
           changerCash: changerCash ? Number(changerCash) : null,
@@ -119,7 +162,12 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
       const data = await res.json();
       if (!res.ok) {
         if (data.error === "period_overlap") {
-          setOverlapWarning(data.message);
+          // Re-render the instant in the viewer's own timezone rather than
+          // trusting the server's message text -- the server doesn't know
+          // what "local" means for whoever's reading this.
+          const lastEnd = data.lastCollectionEnd ? new Date(data.lastCollectionEnd) : null;
+          const when = lastEnd && !Number.isNaN(lastEnd.getTime()) ? lastEnd.toLocaleString() : "your last saved collection";
+          setOverlapWarning(`This period starts before your last saved collection ended (${when}).`);
         } else if (data.error === "concurrent_save") {
           setSaveError(data.message);
         } else {
@@ -171,7 +219,8 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
               <div className="space-y-1.5">
                 <Label>Period start</Label>
                 <Input
-                  type="date"
+                  type="datetime-local"
+                  step="1"
                   value={periodStart}
                   onChange={(e) => setPeriodStart(e.target.value)}
                   onBlur={() => fetchPreview(periodStart, periodEnd)}
@@ -180,7 +229,8 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
               <div className="space-y-1.5">
                 <Label>Period end</Label>
                 <Input
-                  type="date"
+                  type="datetime-local"
+                  step="1"
                   value={periodEnd}
                   onChange={(e) => setPeriodEnd(e.target.value)}
                   onBlur={() => fetchPreview(periodStart, periodEnd)}
@@ -188,8 +238,9 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
               </div>
             </div>
             <p className="text-xs text-gray-400">
-              Start defaults to the end of your last saved collection, so there's no gap or
-              overlap in what FasCard is asked for.
+              Start defaults to exactly when your last saved collection ended, so periods never
+              gap or overlap. Adjust it yourself if a collection was made while the app was
+              unavailable.
             </p>
 
             <div className="rounded-lg border border-gray-200 p-3">

@@ -121,8 +121,17 @@ export default function RevenuePage() {
   // time-of-day (in the browser's local time, same as the date input means
   // it) -- so editing a field that isn't the date never moves the instant.
   function withPreservedTime(dateOnly: string, originalIso: string): string {
+    const original = new Date(originalIso);
+    // If the calendar date wasn't touched, hand back the original instant
+    // untouched rather than reconstructing it. setFullYear sets the local
+    // Y-M-D while keeping the local H:M:S, but during a DST fall-back the
+    // 1-2am hour happens twice; asked to rebuild an unambiguous instant
+    // that fell in the second occurrence, it silently resolves to the
+    // first instead, moving the timestamp an hour early even though
+    // nothing about the date actually changed.
+    if (format(original, "yyyy-MM-dd") === dateOnly) return originalIso;
     const [y, m, d] = dateOnly.split("-").map(Number);
-    const combined = new Date(originalIso);
+    const combined = new Date(original);
     combined.setFullYear(y, m - 1, d);
     return combined.toISOString();
   }

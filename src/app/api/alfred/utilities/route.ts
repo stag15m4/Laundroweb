@@ -8,6 +8,7 @@ import {
   PROPOSAL_TTL_SECONDS,
 } from "@/lib/alfred-write";
 import { validateUtilityBill, writeUtilityBill, type UtilityBillPayload } from "./write";
+import { alfredDateRange } from "@/lib/alfred-dates";
 import { prisma } from "@/lib/prisma";
 
 /** Ties a confirmation token to this endpoint. */
@@ -21,11 +22,14 @@ export async function GET(req: NextRequest) {
   const to = p.get("to");
   const type = p.get("type") as UtilityType | null;
 
+  const range = alfredDateRange(from, to);
+  if (range === null) {
+    return alfredError(400, "invalid_date", "`from` and `to` must be valid dates, e.g. 2026-10-26.");
+  }
+
   const bills = await prisma.utilityBill.findMany({
     where: {
-      ...(from || to
-        ? { billingPeriodStart: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } }
-        : {}),
+      ...(range ? { billingPeriodStart: range } : {}),
       ...(type && Object.values(UtilityType).includes(type) ? { type } : {}),
     },
     orderBy: { billingPeriodStart: "desc" },

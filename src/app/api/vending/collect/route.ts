@@ -147,11 +147,19 @@ export async function POST(req: NextRequest) {
           )
         );
 
-        await tx.setting.upsert({
-          where: { key: "vending.lastCollectionEnd" },
-          update: { value: periodEnd.toISOString() },
-          create: { key: "vending.lastCollectionEnd", value: periodEnd.toISOString() },
-        });
+        // Only advance the cursor, never move it backward. A backfilled
+        // historical period (confirmed past the overlap warning above) ends
+        // before the cursor already does -- overwriting it unconditionally
+        // would roll the "next collection starts here" point back in time,
+        // silently disabling the overlap check for the periods that come
+        // after it.
+        if (cursorMs == null || Number.isNaN(cursorMs) || periodEnd.getTime() > cursorMs) {
+          await tx.setting.upsert({
+            where: { key: "vending.lastCollectionEnd" },
+            update: { value: periodEnd.toISOString() },
+            create: { key: "vending.lastCollectionEnd", value: periodEnd.toISOString() },
+          });
+        }
 
         return entries;
       },

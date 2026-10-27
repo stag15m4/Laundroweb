@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -40,42 +41,42 @@ export async function POST(req: NextRequest) {
   }
   const body = await req.json();
 
-  if (body._action === "sale") {
+  if (body._action === "restock") {
     const product = await prisma.vendingProduct.findUnique({ where: { id: body.productId } });
     if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const [sale] = await prisma.$transaction([
-      prisma.vendingSale.create({
-        data: {
-          productId: body.productId,
-          quantity: toInt(body.quantity, 0),
-          revenue: Number(product.price) * toInt(body.quantity, 0),
-          date: new Date(body.date),
-        },
-      }),
-      prisma.vendingProduct.update({
-        where: { id: body.productId },
-        data: { currentStock: { decrement: toInt(body.quantity, 0) } },
-      }),
-    ]);
-    return NextResponse.json(sale, { status: 201 });
-  }
+    const quantity = toInt(body.quantity, 0);
+    const cost = toDecimal(body.cost);
+    const date = new Date(body.date);
+    const supplier = body.supplier || null;
 
-  if (body._action === "restock") {
-    const [restock] = await prisma.$transaction([
+    // A restock with a cost also logs an Expense, so vending purchases show
+    // up on Reports next to vending revenue -- without this, "is vending
+    // self-sustaining" has no way to be answered from the app. A restock
+    // with no cost given (the owner didn't have it handy) still saves, just
+    // without an expense to match.
+    const ops: Prisma.PrismaPromise<unknown>[] = [
       prisma.vendingRestock.create({
-        data: {
-          productId: body.productId,
-          quantity: toInt(body.quantity, 0),
-          cost: toDecimal(body.cost),
-          date: new Date(body.date),
-          supplier: body.supplier || null,
-        },
+        data: { productId: body.productId, quantity, cost, date, supplier },
       }),
       prisma.vendingProduct.update({
         where: { id: body.productId },
-        data: { currentStock: { increment: toInt(body.quantity, 0) } },
+        data: { currentStock: { increment: quantity } },
       }),
-    ]);
+    ];
+    if (cost != null && cost > 0) {
+      ops.push(
+        prisma.expense.create({
+          data: {
+            date,
+            category: "Vending Resupply",
+            description: `Restocked ${quantity}x ${product.name}`,
+            amount: cost,
+            vendor: supplier,
+          },
+        })
+      );
+    }
+    const [restock] = await prisma.$transaction(ops);
     return NextResponse.json(restock, { status: 201 });
   }
 

@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, ShoppingBag, Package, RefreshCw, AlertTriangle, LayoutGrid, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Plus, ShoppingBag, Package, RefreshCw, AlertTriangle, LayoutGrid, ChevronLeft, ChevronRight, X, Pencil } from "lucide-react";
 import { format } from "date-fns";
+import { CollectVendingDialog } from "@/components/vending/CollectVendingDialog";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -383,10 +384,10 @@ export default function VendingPage() {
   const [selectedMachineId, setSelectedMachineId] = useState<string>("");
 
   const [addOpen, setAddOpen] = useState(false);
-  const [saleOpen, setSaleOpen] = useState(false);
   const [restockOpen, setRestockOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [form, setForm] = useState(emptyProduct);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
   const [savingProduct, setSavingProduct] = useState(false);
   const [txForm, setTxForm] = useState({ productId: "", quantity: "1", cost: "", supplier: "", date: format(new Date(), "yyyy-MM-dd") });
@@ -411,13 +412,14 @@ export default function VendingPage() {
 
     // The stock fields are text inputs, so they leave here as strings. Sending
     // them as numbers keeps a string from ever reaching an Int column.
-    const res = await fetch("/api/vending", {
-      method: "POST",
+    const res = await fetch(editingProductId ? `/api/vending/${editingProductId}` : "/api/vending", {
+      method: editingProductId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
         currentStock: Number(form.currentStock) || 0,
         minimumStock: Number(form.minimumStock) || 0,
+        active: true,
       }),
     });
     setSavingProduct(false);
@@ -429,23 +431,28 @@ export default function VendingPage() {
     }
 
     const p = await res.json();
-    setProducts((prev) => [...prev, { ...p, _count: { sales: 0, restocks: 0 } }]);
+    setProducts((prev) =>
+      editingProductId
+        ? prev.map((x) => (x.id === p.id ? { ...p, _count: x._count } : x))
+        : [...prev, { ...p, _count: { sales: 0, restocks: 0 } }]
+    );
     setAddOpen(false);
+    setEditingProductId(null);
     setForm(emptyProduct);
   }
 
-  async function handleSale(e: React.FormEvent) {
-    e.preventDefault();
-    const res = await fetch("/api/vending", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ _action: "sale", productId: txForm.productId, quantity: Number(txForm.quantity), date: txForm.date }),
+  function openEditProduct(p: Product) {
+    setEditingProductId(p.id);
+    setForm({
+      name: p.name,
+      category: p.category,
+      price: p.price,
+      costPerUnit: p.costPerUnit ?? "",
+      currentStock: String(p.currentStock),
+      minimumStock: String(p.minimumStock),
     });
-    if (res.ok) {
-      const refreshed = await fetch("/api/vending").then((r) => r.json());
-      setProducts(refreshed);
-      setSaleOpen(false);
-    }
+    setFormError("");
+    setAddOpen(true);
   }
 
   async function handleRestock(e: React.FormEvent) {
@@ -462,12 +469,6 @@ export default function VendingPage() {
     }
   }
 
-  function openSale(p: Product) {
-    setSelectedProduct(p);
-    setTxForm((f) => ({ ...f, productId: p.id, quantity: "1" }));
-    setSaleOpen(true);
-  }
-
   function openRestock(p: Product) {
     setSelectedProduct(p);
     setTxForm((f) => ({ ...f, productId: p.id, quantity: "10" }));
@@ -479,15 +480,12 @@ export default function VendingPage() {
       <Header title="Vending" description="Laundry supplies, vending inventory, and machine planograms">
         {tab === "products" && (
           <>
+            <CollectVendingDialog machines={vendingMachines} onSaved={() => {}} />
             <Button variant="outline" onClick={() => { setTxForm((f) => ({ ...f, productId: products[0]?.id ?? "" })); setRestockOpen(true); }}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Restock
             </Button>
-            <Button variant="outline" onClick={() => { setTxForm((f) => ({ ...f, productId: products[0]?.id ?? "" })); setSaleOpen(true); }}>
-              <ShoppingBag className="h-4 w-4 mr-2" />
-              Log Sale
-            </Button>
-            <Button onClick={() => setAddOpen(true)}>
+            <Button onClick={() => { setEditingProductId(null); setForm(emptyProduct); setFormError(""); setAddOpen(true); }}>
               <Plus className="h-4 w-4 mr-2" />
               Add Product
             </Button>
@@ -569,13 +567,12 @@ export default function VendingPage() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="flex-1" onClick={() => openSale(p)}>
-                        <ShoppingBag className="h-3 w-3 mr-1" />
-                        Sell
-                      </Button>
                       <Button variant="outline" size="sm" className="flex-1" onClick={() => openRestock(p)}>
                         <Package className="h-3 w-3 mr-1" />
                         Restock
+                      </Button>
+                      <Button variant="outline" size="icon" className="flex-shrink-0" onClick={() => openEditProduct(p)}>
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </CardContent>
@@ -640,11 +637,14 @@ export default function VendingPage() {
         open={addOpen}
         onOpenChange={(v) => {
           setAddOpen(v);
-          if (!v) setFormError("");
+          if (!v) {
+            setFormError("");
+            setEditingProductId(null);
+          }
         }}
       >
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Vending Product</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingProductId ? "Edit Vending Product" : "Add Vending Product"}</DialogTitle></DialogHeader>
           <form onSubmit={handleAddProduct} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5 col-span-2">
@@ -667,8 +667,11 @@ export default function VendingPage() {
                 <Input type="number" step="0.01" value={form.costPerUnit} onChange={(e) => setForm((f) => ({ ...f, costPerUnit: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
-                <Label>Initial Stock</Label>
+                <Label>{editingProductId ? "Current Stock" : "Initial Stock"}</Label>
                 <Input type="number" value={form.currentStock} onChange={(e) => setForm((f) => ({ ...f, currentStock: e.target.value }))} />
+                {editingProductId && (
+                  <p className="text-xs text-gray-400">Correct this after a physical count.</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>Minimum Stock Alert</Label>
@@ -679,37 +682,8 @@ export default function VendingPage() {
               <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>
             )}
             <Button type="submit" className="w-full" disabled={savingProduct}>
-              {savingProduct ? "Saving…" : "Add Product"}
+              {savingProduct ? "Saving…" : editingProductId ? "Save Changes" : "Add Product"}
             </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={saleOpen} onOpenChange={setSaleOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Log Sale{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle></DialogHeader>
-          <form onSubmit={handleSale} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Product</Label>
-              <Select value={txForm.productId} onValueChange={(v) => { setTxForm((f) => ({ ...f, productId: v })); setSelectedProduct(products.find((p) => p.id === v) ?? null); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{products.filter((p) => p.active).map((p) => <SelectItem key={p.id} value={p.id}>{p.name} (stock: {p.currentStock})</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Quantity</Label>
-                <Input type="number" min="1" value={txForm.quantity} onChange={(e) => setTxForm((f) => ({ ...f, quantity: e.target.value }))} required />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Date</Label>
-                <Input type="date" value={txForm.date} onChange={(e) => setTxForm((f) => ({ ...f, date: e.target.value }))} />
-              </div>
-            </div>
-            {selectedProduct && (
-              <p className="text-sm text-gray-500">Revenue: {formatCurrency(Number(selectedProduct.price) * Number(txForm.quantity || 0))}</p>
-            )}
-            <Button type="submit" className="w-full">Log Sale</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -743,6 +717,12 @@ export default function VendingPage() {
                 <Input type="date" value={txForm.date} onChange={(e) => setTxForm((f) => ({ ...f, date: e.target.value }))} />
               </div>
             </div>
+            {txForm.cost && (
+              <p className="text-xs text-gray-400">
+                A cost also logs a matching expense under Expenses → Vending Resupply, so you can
+                see whether vending is paying for itself.
+              </p>
+            )}
             <Button type="submit" className="w-full">Save Restock</Button>
           </form>
         </DialogContent>

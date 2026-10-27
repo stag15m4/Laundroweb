@@ -17,7 +17,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       category: body.category,
       price: Number(body.price),
       costPerUnit: body.costPerUnit ? Number(body.costPerUnit) : null,
-      // Same string-from-a-form hazard as the create route.
+      // Same string-from-a-form hazard as the create route. currentStock in
+      // particular is how an owner corrects the count after a physical
+      // check -- with sale logging gone, restock (up) and this edit (either
+      // direction) are the only two ways stock ever changes.
+      currentStock:
+        body.currentStock === undefined ? undefined : Number.parseInt(String(body.currentStock), 10) || 0,
       minimumStock:
         body.minimumStock === undefined
           ? undefined

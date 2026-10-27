@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
 import { Plus, ShoppingBag, Package, RefreshCw, AlertTriangle, LayoutGrid, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { format } from "date-fns";
+import { CollectVendingDialog } from "@/components/vending/CollectVendingDialog";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -383,7 +384,6 @@ export default function VendingPage() {
   const [selectedMachineId, setSelectedMachineId] = useState<string>("");
 
   const [addOpen, setAddOpen] = useState(false);
-  const [saleOpen, setSaleOpen] = useState(false);
   const [restockOpen, setRestockOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [form, setForm] = useState(emptyProduct);
@@ -434,20 +434,6 @@ export default function VendingPage() {
     setForm(emptyProduct);
   }
 
-  async function handleSale(e: React.FormEvent) {
-    e.preventDefault();
-    const res = await fetch("/api/vending", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ _action: "sale", productId: txForm.productId, quantity: Number(txForm.quantity), date: txForm.date }),
-    });
-    if (res.ok) {
-      const refreshed = await fetch("/api/vending").then((r) => r.json());
-      setProducts(refreshed);
-      setSaleOpen(false);
-    }
-  }
-
   async function handleRestock(e: React.FormEvent) {
     e.preventDefault();
     const res = await fetch("/api/vending", {
@@ -462,12 +448,6 @@ export default function VendingPage() {
     }
   }
 
-  function openSale(p: Product) {
-    setSelectedProduct(p);
-    setTxForm((f) => ({ ...f, productId: p.id, quantity: "1" }));
-    setSaleOpen(true);
-  }
-
   function openRestock(p: Product) {
     setSelectedProduct(p);
     setTxForm((f) => ({ ...f, productId: p.id, quantity: "10" }));
@@ -479,13 +459,10 @@ export default function VendingPage() {
       <Header title="Vending" description="Laundry supplies, vending inventory, and machine planograms">
         {tab === "products" && (
           <>
+            <CollectVendingDialog machines={vendingMachines} onSaved={() => {}} />
             <Button variant="outline" onClick={() => { setTxForm((f) => ({ ...f, productId: products[0]?.id ?? "" })); setRestockOpen(true); }}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Restock
-            </Button>
-            <Button variant="outline" onClick={() => { setTxForm((f) => ({ ...f, productId: products[0]?.id ?? "" })); setSaleOpen(true); }}>
-              <ShoppingBag className="h-4 w-4 mr-2" />
-              Log Sale
             </Button>
             <Button onClick={() => setAddOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
@@ -568,16 +545,10 @@ export default function VendingPage() {
                         <span>{p._count.sales}</span>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="flex-1" onClick={() => openSale(p)}>
-                        <ShoppingBag className="h-3 w-3 mr-1" />
-                        Sell
-                      </Button>
-                      <Button variant="outline" size="sm" className="flex-1" onClick={() => openRestock(p)}>
-                        <Package className="h-3 w-3 mr-1" />
-                        Restock
-                      </Button>
-                    </div>
+                    <Button variant="outline" size="sm" className="w-full" onClick={() => openRestock(p)}>
+                      <Package className="h-3 w-3 mr-1" />
+                      Restock
+                    </Button>
                   </CardContent>
                 </Card>
               );
@@ -685,35 +656,6 @@ export default function VendingPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={saleOpen} onOpenChange={setSaleOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Log Sale{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle></DialogHeader>
-          <form onSubmit={handleSale} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Product</Label>
-              <Select value={txForm.productId} onValueChange={(v) => { setTxForm((f) => ({ ...f, productId: v })); setSelectedProduct(products.find((p) => p.id === v) ?? null); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{products.filter((p) => p.active).map((p) => <SelectItem key={p.id} value={p.id}>{p.name} (stock: {p.currentStock})</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Quantity</Label>
-                <Input type="number" min="1" value={txForm.quantity} onChange={(e) => setTxForm((f) => ({ ...f, quantity: e.target.value }))} required />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Date</Label>
-                <Input type="date" value={txForm.date} onChange={(e) => setTxForm((f) => ({ ...f, date: e.target.value }))} />
-              </div>
-            </div>
-            {selectedProduct && (
-              <p className="text-sm text-gray-500">Revenue: {formatCurrency(Number(selectedProduct.price) * Number(txForm.quantity || 0))}</p>
-            )}
-            <Button type="submit" className="w-full">Log Sale</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={restockOpen} onOpenChange={setRestockOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Restock{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle></DialogHeader>
@@ -743,6 +685,12 @@ export default function VendingPage() {
                 <Input type="date" value={txForm.date} onChange={(e) => setTxForm((f) => ({ ...f, date: e.target.value }))} />
               </div>
             </div>
+            {txForm.cost && (
+              <p className="text-xs text-gray-400">
+                A cost also logs a matching expense under Expenses → Vending Resupply, so you can
+                see whether vending is paying for itself.
+              </p>
+            )}
             <Button type="submit" className="w-full">Save Restock</Button>
           </form>
         </DialogContent>

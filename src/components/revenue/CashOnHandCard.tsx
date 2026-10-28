@@ -13,7 +13,16 @@ import { format } from "date-fns";
 type Summary = { cashOnHand: number; vendingTotal: number; changerTotal: number; depositTotal: number };
 type Deposit = { id: string; date: string; amount: string; depositedBy: string | null; notes: string | null };
 
-export function CashOnHandCard({ isOwner }: { isOwner: boolean }) {
+// A bare "yyyy-MM-dd" has no time part, so Date parses it as UTC midnight --
+// rendered back in a viewer's local timezone (as History does via
+// formatDate), that can display as the day before for anyone west of UTC.
+// Appending a local (no "Z") time-of-day instead makes Date resolve it as
+// local midnight, which round-trips to the same calendar day everywhere.
+function localDateToIso(dateOnly: string): string {
+  return new Date(`${dateOnly}T00:00:00`).toISOString();
+}
+
+export function CashOnHandCard({ isOwner, refreshToken }: { isOwner: boolean; refreshToken?: number }) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
 
@@ -33,9 +42,12 @@ export function CashOnHandCard({ isOwner }: { isOwner: boolean }) {
     fetch("/api/cash/deposits").then((r) => r.json()).then((d) => Array.isArray(d) && setDeposits(d));
   }
 
+  // refreshToken changes whenever the Revenue page saves a collection or
+  // adds/edits/deletes an entry -- none of which this component would
+  // otherwise know happened, since nothing here causes those actions.
   useEffect(() => {
     refreshSummary();
-  }, []);
+  }, [refreshToken]);
 
   function openDeposit() {
     setAmount(summary ? summary.cashOnHand.toFixed(2) : "");
@@ -58,7 +70,12 @@ export function CashOnHandCard({ isOwner }: { isOwner: boolean }) {
     const res = await fetch("/api/cash/deposits", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: Number(amount), date, depositedBy: depositedBy || null, notes: notes || null }),
+      body: JSON.stringify({
+        amount: Number(amount),
+        date: localDateToIso(date),
+        depositedBy: depositedBy || null,
+        notes: notes || null,
+      }),
     });
     setSaving(false);
     if (!res.ok) {

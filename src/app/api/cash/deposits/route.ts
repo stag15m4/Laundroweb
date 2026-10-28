@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -34,26 +35,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "date must be a valid date" }, { status: 400 });
   }
 
-  const [vending, changer, deposits] = await Promise.all([
-    prisma.revenueEntry.aggregate({ where: { source: "VENDING" }, _sum: { amount: true } }),
-    prisma.coinChangerLog.aggregate({ _sum: { amount: true } }),
-    prisma.cashDeposit.aggregate({ _sum: { amount: true } }),
-  ]);
-  const cashOnHand =
-    Number(vending._sum.amount ?? 0) + Number(changer._sum.amount ?? 0) - Number(deposits._sum.amount ?? 0);
-
-  if (amount > cashOnHand + 0.01) {
-    return NextResponse.json(
-      { error: `Cash on Hand is only $${cashOnHand.toFixed(2)} -- can't deposit more than that.` },
-      { status: 400 }
-    );
-  }
-
   const depositedBy = typeof body.depositedBy === "string" && body.depositedBy.trim() ? body.depositedBy.trim() : null;
   const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
 
-  const deposit = await prisma.cashDeposit.create({
-    data: { date, amount, depositedBy, notes },
-  });
-  return NextResponse.json(deposit, { status: 201 });
+  class OverdraftError extends Error {
+    constructor(public cashOnHand: number) {
+      super(`Cash on Hand is only $${cashOnHand.toFixed(2)} -- can't deposit more than that.`);
+    }
+  }
+
+  try {
+    // Reading the balance and inserting the deposit have to happen in the
+    // same serializable transaction -- otherwise two deposits submitted at
+    // the same time can both read the same balance, both pass the
+    // overdraft check, and together spend more cash than was ever on hand.
+    const deposit = await prisma.$transaction(
+      async (tx) => {
+        const [vending, changer, deposits] = await Promise.all([
+          tx.revenueEntry.aggregate({ where: { source: "VENDING" }, _sum: { amount: true } }),
+          tx.coinChangerLog.aggregate({ _sum: { amount: true } }),
+          tx.cashDeposit.aggregate({ _sum: { amount: true } }),
+        ]);
+        const cashOnHand =
+          Number(vending._sum.amount ?? 0) + Number(changer._sum.amount ?? 0) - Number(deposits._sum.amount ?? 0);
+
+        if (amount > cashOnHand + 0.01) {
+          throw new OverdraftError(cashOnHand);
+        }
+
+        return tx.cashDeposit.create({ data: { date, amount, depositedBy, notes } });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+    return NextResponse.json(deposit, { status: 201 });
+  } catch (err) {
+    if (err instanceof OverdraftError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
+      return NextResponse.json(
+        { error: "Another deposit was saved at the same moment. Please try again." },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
 }

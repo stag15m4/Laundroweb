@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { CollectQuartersDialog } from "@/components/revenue/CollectQuartersDialog";
+import { CashOnHandCard } from "@/components/revenue/CashOnHandCard";
 import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,11 @@ export default function RevenuePage() {
   // time-of-day is reapplied to whatever day comes out of the form.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingOriginalDate, setEditingOriginalDate] = useState<string | null>(null);
+  // Bumped after anything that could change Cash on Hand (a collection, or
+  // adding/editing/deleting an entry) -- CashOnHandCard has no other way to
+  // know any of that happened, since none of it runs inside that component.
+  const [cashRefreshToken, setCashRefreshToken] = useState(0);
+  const refreshCash = () => setCashRefreshToken((t) => t + 1);
 
   function refreshEntries() {
     fetch("/api/revenue").then((r) => r.json()).then(setEntries);
@@ -153,6 +159,7 @@ export default function RevenuePage() {
       setEditingId(null);
       setEditingOriginalDate(null);
       setForm(emptyForm);
+      refreshCash();
     }
   }
 
@@ -160,13 +167,21 @@ export default function RevenuePage() {
     if (!confirm("Delete this entry?")) return;
     await fetch(`/api/revenue/${id}`, { method: "DELETE" });
     setEntries((prev) => prev.filter((e) => e.id !== id));
+    refreshCash();
   }
 
   return (
     <div>
       <Header title="Revenue" description="Track coin vault collections and card payments">
         <div className="flex items-center gap-2">
-          {isOwner && <CollectQuartersDialog onSaved={refreshEntries} />}
+          {isOwner && (
+            <CollectQuartersDialog
+              onSaved={() => {
+                refreshEntries();
+                refreshCash();
+              }}
+            />
+          )}
           <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditingId(null); setEditingOriginalDate(null); setForm(emptyForm); } }}>
           <Button onClick={openAdd}>
             <Plus className="h-4 w-4 mr-2" />
@@ -269,6 +284,8 @@ export default function RevenuePage() {
             </CardContent>
           </Card>
         </div>
+
+        <CashOnHandCard isOwner={isOwner} refreshToken={cashRefreshToken} />
 
         <Card>
           <CardHeader>

@@ -38,9 +38,10 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // Saves a washer/dryer quarter collection: FasCard-reported revenue for
 // reader-equipped machines (recomputed here, never trusted from the client)
 // plus the operator's weighed-coin totals for everything else, as one or
-// more RevenueEntry rows per category. Nothing about the coin changer's
-// cash is saved as revenue -- it isn't any -- it's folded into the notes
-// purely so there's a record of it.
+// more RevenueEntry rows per category. Cash removed from the coin changer
+// isn't revenue -- it's bills already exchanged for quarters, not new
+// money -- so it never becomes a RevenueEntry; it's logged as its own
+// CoinChangerLog row instead, which is what feeds Cash on Hand.
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session || (session.user as { role?: string }).role !== "OWNER") {
@@ -88,10 +89,6 @@ export async function POST(req: NextRequest) {
   const dryerCoinDollars = dryerCoinWeight ? coinWeightToDollars(dryerCoinWeight.value, dryerCoinWeight.unit) : 0;
 
   const periodLabel = `${labelInstant(periodStart)} to ${labelInstant(periodEnd)}`;
-  const changerNote =
-    changerCash != null
-      ? ` Cash removed from the coin changer this round: $${changerCash.toFixed(2)} (not counted as revenue -- it's bills already exchanged for quarters, not new money).`
-      : "";
 
   const rows: {
     date: Date;
@@ -166,30 +163,11 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  if (rows.length === 0 && changerCash == null) {
+  if (rows.length === 0 && !changerCash) {
     return NextResponse.json(
       { error: "Nothing to save -- no FasCard revenue, weighed coin, or changer cash was given." },
       { status: 400 }
     );
-  }
-
-  // The changer-cash note rides on whichever row ends up first, so it's
-  // recorded exactly once regardless of which categories had real revenue.
-  // If nothing else was recorded this round, it still needs a row to live
-  // on -- a $0 entry whose only purpose is carrying that note forward.
-  if (changerCash != null) {
-    if (rows.length > 0) {
-      rows[0].notes += changerNote;
-    } else {
-      rows.push({
-        date: periodEnd,
-        amount: 0,
-        source: "OTHER",
-        machineType: "WASHER",
-        notes: `No washer/dryer revenue recorded for ${periodLabel}.${changerNote}`,
-        collectedBy,
-      });
-    }
   }
 
   try {
@@ -226,6 +204,16 @@ export async function POST(req: NextRequest) {
           )
         );
 
+        const changerLog = changerCash
+          ? await tx.coinChangerLog.create({
+              data: {
+                date: periodEnd,
+                amount: round2(changerCash),
+                notes: `Coin changer, collected during the washer/dryer round, ${periodLabel}.`,
+              },
+            })
+          : null;
+
         // Only advance the cursor, never move it backward. A backfilled
         // historical period (confirmed past the overlap warning above) ends
         // before the cursor already does -- overwriting it unconditionally
@@ -240,16 +228,17 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        return entries;
+        return { entries, changerLog };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
 
     return NextResponse.json({
-      entries: created,
+      entries: created.entries,
       summary: {
         washerTotal: round2(fascard.washer.cash + fascard.washer.card + washerCoinDollars),
         dryerTotal: round2(fascard.dryer.cash + fascard.dryer.card + dryerCoinDollars),
+        changerCash: created.changerLog ? round2(changerCash!) : null,
       },
     });
   } catch (err) {

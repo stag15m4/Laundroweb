@@ -228,6 +228,34 @@ model RevenueEntry {
   updatedAt   DateTime      @updatedAt
 }
 
+/// Cash pulled from the coin changer (bills exchanged for quarters) -- not
+/// revenue, since no new money came in, but still physical cash sitting in
+/// the till that needs to be deposited. Logged from the same Collect
+/// Quarters round as washer/dryer coin, since it's the same visit to the
+/// same machine, but kept out of RevenueEntry entirely so it can never be
+/// mistaken for income.
+model CoinChangerLog {
+  id        String   @id @default(cuid())
+  date      DateTime
+  amount    Decimal  @db.Decimal(10, 2)
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+/// A deposit of accumulated cash on hand (vending revenue + coin changer
+/// cash) to the bank. amount is what was actually taken, which can be less
+/// than the full balance on hand -- the rest (a float kept back for making
+/// change, say) simply isn't subtracted and stays as cash on hand; there's
+/// no separate "held back" field because nothing needs to track it.
+model CashDeposit {
+  id          String   @id @default(cuid())
+  date        DateTime
+  amount      Decimal  @db.Decimal(10, 2)
+  depositedBy String?
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
 model UtilityBill {
   id                 String      @id @default(cuid())
   type               UtilityType

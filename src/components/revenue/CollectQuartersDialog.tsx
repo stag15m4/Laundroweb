@@ -70,7 +70,11 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
-  const [savedSummary, setSavedSummary] = useState<{ washerTotal: number; dryerTotal: number } | null>(null);
+  const [savedSummary, setSavedSummary] = useState<{
+    washerTotal: number;
+    dryerTotal: number;
+    changerCash: number | null;
+  } | null>(null);
 
   async function fetchPreview(start: string, end: string) {
     const startIso = toIso(start);
@@ -208,6 +212,13 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
             <p className="text-sm text-green-700 bg-green-50 rounded-md px-3 py-3">
               Saved. Washers: {formatCurrency(savedSummary.washerTotal)} · Dryers:{" "}
               {formatCurrency(savedSummary.dryerTotal)}
+              {savedSummary.changerCash != null && (
+                <>
+                  {" "}
+                  · Coin changer: {formatCurrency(savedSummary.changerCash)} (added to Cash on
+                  Hand, not revenue)
+                </>
+              )}
             </p>
             <Button className="w-full" onClick={() => setOpen(false)}>
               Done
@@ -328,7 +339,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
             <div className="space-y-1.5">
               <Label>
                 Cash removed from the coin changer{" "}
-                <span className="text-gray-400 font-normal">(for your records -- not revenue)</span>
+                <span className="text-gray-400 font-normal">(not revenue -- added to Cash on Hand)</span>
               </Label>
               <Input
                 type="number"

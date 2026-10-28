@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { CollectQuartersDialog } from "@/components/revenue/CollectQuartersDialog";
+import { CashOnHandCard } from "@/components/revenue/CashOnHandCard";
 import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -269,6 +270,8 @@ export default function RevenuePage() {
             </CardContent>
           </Card>
         </div>
+
+        <CashOnHandCard isOwner={isOwner} />
 
         <Card>
           <CardHeader>

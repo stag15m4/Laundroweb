@@ -19,6 +19,7 @@ import {
   FileText,
   CalendarDays,
   Phone,
+  Undo2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +47,7 @@ const ownerNav: NavItem[] = [
   { href: "/dashboard/revenue", label: "Finance", icon: DollarSign, activePaths: FINANCE_PATHS },
   { href: "/dashboard/vending", label: "Vending", icon: ShoppingBag },
   { href: "/dashboard/phone", label: "Phone inbox", icon: Phone },
+  { href: "/dashboard/refunds", label: "Refund Requests", icon: Undo2 },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/contacts", label: "Contacts", icon: Users },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
@@ -60,6 +62,7 @@ const staffNav: NavItem[] = [
   { href: "/dashboard/wdf", label: "Wash Dry Fold", icon: ShoppingBag },
   { href: "/dashboard/equipment", label: "Equipment", icon: LayoutGrid, activePaths: EQUIPMENT_PATHS },
   { href: "/dashboard/phone", label: "Phone inbox", icon: Phone },
+  { href: "/dashboard/refunds", label: "Refund Requests", icon: Undo2 },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/documents", label: "Documents", icon: FileText },

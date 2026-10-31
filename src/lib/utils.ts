@@ -22,6 +22,17 @@ export function formatDate(date: Date | string | null | undefined) {
   });
 }
 
+export function formatDateTime(date: Date | string | null | undefined) {
+  if (!date) return "—";
+  return new Date(date).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 // A bare "yyyy-MM-dd" has no time part, so Date parses it as UTC midnight --
 // rendered back in a viewer's local timezone (as formatDate does), that can
 // display as the day before for anyone west of UTC. Appending a local (no

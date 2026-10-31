@@ -128,7 +128,6 @@ model Machine {
   manual               ManualDocument?
   vendingSlots         VendingSlot[]
   noteEntries          Note[]
-  refundRequests       RefundRequest[]
 }
 
 model MachineModelPricing {
@@ -378,23 +377,40 @@ model Incident {
 /// which machine, or it may no longer exist) and machineLabel is a
 /// denormalized snapshot of what they picked, kept even if the Machine row
 /// is later deleted or renamed. Review (status/notes) is staff-only.
+///
+/// Submitted from the public marketing site (clinton-laundry-works), not
+/// from this app -- customers never log in here. machineLabel is a plain
+/// unit number typed in by the customer (what's printed on the machine),
+/// not a foreign key: the public site has no database of its own and isn't
+/// meant to query this one just to populate a dropdown.
+///
+/// transactionAmount (what they actually fed the machine) and
+/// amountRequested (what they're asking back) are both required and kept
+/// separate on purpose -- they're usually equal, but someone claiming
+/// consequential cost beyond the coin value needs to be able to say so, and
+/// a reviewer needs to see both to judge a claim.
 model RefundRequest {
-  id              String               @id @default(cuid())
-  machineId       String?
-  machine         Machine?             @relation(fields: [machineId], references: [id], onDelete: SetNull)
-  machineLabel    String
-  customerName    String
-  customerPhone   String?
-  customerEmail   String?
-  issueDate       DateTime
-  description     String
-  amountRequested Decimal?             @db.Decimal(10, 2)
-  status          RefundRequestStatus  @default(PENDING)
-  reviewNotes     String?
-  reviewedBy      String?
-  reviewedAt      DateTime?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  id                String              @id @default(cuid())
+  machineLabel      String
+  customerName      String
+  customerPhone     String
+  customerEmail     String?
+  customerAddress   String
+  issueDate         DateTime
+  description       String
+  transactionAmount Decimal             @db.Decimal(10, 2)
+  amountRequested   Decimal             @db.Decimal(10, 2)
+  // True only once the customer has checked the "I certify this is
+  // accurate" box -- the API rejects the submission otherwise, so every
+  // stored row has this true; it's kept as a column rather than discarded
+  // so the acknowledgment itself is part of the record.
+  certifiedAccurate Boolean             @default(false)
+  status            RefundRequestStatus @default(PENDING)
+  reviewNotes       String?
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   @@index([status])
 }

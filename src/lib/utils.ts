@@ -21,3 +21,12 @@ export function formatDate(date: Date | string | null | undefined) {
     year: "numeric",
   });
 }
+
+// A bare "yyyy-MM-dd" has no time part, so Date parses it as UTC midnight --
+// rendered back in a viewer's local timezone (as formatDate does), that can
+// display as the day before for anyone west of UTC. Appending a local (no
+// "Z") time-of-day instead makes Date resolve it as local midnight, which
+// round-trips to the same calendar day everywhere.
+export function localDateToIso(dateOnly: string): string {
+  return new Date(`${dateOnly}T00:00:00`).toISOString();
+}

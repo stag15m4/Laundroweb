@@ -6,21 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, localDateToIso } from "@/lib/utils";
 import { Wallet, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 type Summary = { cashOnHand: number; vendingTotal: number; changerTotal: number; depositTotal: number };
 type Deposit = { id: string; date: string; amount: string; depositedBy: string | null; notes: string | null };
-
-// A bare "yyyy-MM-dd" has no time part, so Date parses it as UTC midnight --
-// rendered back in a viewer's local timezone (as History does via
-// formatDate), that can display as the day before for anyone west of UTC.
-// Appending a local (no "Z") time-of-day instead makes Date resolve it as
-// local midnight, which round-trips to the same calendar day everywhere.
-function localDateToIso(dateOnly: string): string {
-  return new Date(`${dateOnly}T00:00:00`).toISOString();
-}
 
 export function CashOnHandCard({ isOwner, refreshToken }: { isOwner: boolean; refreshToken?: number }) {
   const [summary, setSummary] = useState<Summary | null>(null);

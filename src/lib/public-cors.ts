@@ -6,14 +6,19 @@
 // own visitors' browsers. This doesn't gate who can POST at all (anyone can
 // already do that directly with curl; CORS only restricts browser JS), just
 // which *browsers* are told they're allowed to read the response.
-const ALLOWED_ORIGINS = [
-  "https://clintonlaundryworks.com",
-  "https://www.clintonlaundryworks.com",
-  ...(process.env.NODE_ENV !== "production" ? ["http://localhost:3000"] : []),
-];
+const ALLOWED_ORIGINS = ["https://clintonlaundryworks.com", "https://www.clintonlaundryworks.com"];
+
+// In dev, the two sites normally run on different localhost ports (e.g.
+// this app on 3000, the marketing site on 3001) -- any localhost port is
+// fine to trust locally, since it's never reachable outside this machine.
+const LOCALHOST_ORIGIN = /^http:\/\/localhost:\d+$/;
 
 export function corsHeaders(origin: string | null): HeadersInit {
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+  const allowed =
+    origin !== null &&
+    (ALLOWED_ORIGINS.includes(origin) || (process.env.NODE_ENV !== "production" && LOCALHOST_ORIGIN.test(origin)));
+
+  if (allowed && origin) {
     return {
       "Access-Control-Allow-Origin": origin,
       "Access-Control-Allow-Methods": "POST, OPTIONS",

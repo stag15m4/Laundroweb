@@ -197,6 +197,10 @@ export function RefundRequestForm() {
     <LanguageProvider>
       <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4 py-10">
         <div className="w-full max-w-sm">
+          <div className="flex justify-center mb-6">
+            <LanguageSwitcher />
+          </div>
+
           <div className="flex flex-col items-center mb-6">
             <Image
               src="/logo-hero.png"
@@ -207,10 +211,6 @@ export function RefundRequestForm() {
               className="h-20 w-auto mb-2"
             />
             <HeaderText />
-          </div>
-
-          <div className="flex justify-center mb-4">
-            <LanguageSwitcher />
           </div>
 
           <div className="bg-white rounded-xl shadow-lg p-6">

@@ -10,19 +10,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { Undo2 } from "lucide-react";
 
 type RefundRequest = {
   id: string;
   machineLabel: string;
-  machine: { name: string; type: string } | null;
   customerName: string;
-  customerPhone: string | null;
+  customerPhone: string;
   customerEmail: string | null;
+  customerAddress: string;
   issueDate: string;
   description: string;
-  amountRequested: string | null;
+  transactionAmount: string;
+  amountRequested: string;
   status: "PENDING" | "APPROVED" | "DENIED" | "RESOLVED";
   reviewNotes: string | null;
   reviewedBy: string | null;
@@ -98,7 +99,7 @@ export default function RefundsPage() {
     <div>
       <Header
         title="Refund Requests"
-        description="Customer-submitted requests for a refund or reimbursement, from the public refund form"
+        description="Customer-submitted requests for a refund or reimbursement, from clintonlaundryworks.com"
       />
       <div className="p-6 space-y-4">
         <div className="flex gap-2 flex-wrap">
@@ -140,13 +141,19 @@ export default function RefundsPage() {
                       <Badge variant={STATUS_BADGE[r.status]}>{r.status}</Badge>
                     </div>
                     <p className="text-sm text-gray-500 mt-0.5">
-                      {r.machineLabel} · {formatDate(r.issueDate)}
-                      {r.amountRequested != null && ` · ${formatCurrency(r.amountRequested)} requested`}
+                      Unit {r.machineLabel} · {formatDateTime(r.issueDate)}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {formatCurrency(r.transactionAmount)} paid into machine ·{" "}
+                      <span className="font-medium text-gray-700">
+                        {formatCurrency(r.amountRequested)} requested
+                      </span>
                     </p>
                     <p className="text-sm text-gray-700 mt-1.5">{r.description}</p>
                     <p className="text-xs text-gray-400 mt-1.5">
                       {[r.customerPhone, r.customerEmail].filter(Boolean).join(" · ")}
                     </p>
+                    <p className="text-xs text-gray-400">{r.customerAddress}</p>
                     {r.reviewNotes && (
                       <p className="text-xs text-gray-400 mt-1.5 italic">
                         Review: {r.reviewNotes}
@@ -175,10 +182,21 @@ export default function RefundsPage() {
             <form onSubmit={handleReview} className="space-y-4">
               <div className="text-sm text-gray-600 space-y-1">
                 <p>
-                  <span className="font-semibold text-gray-900">{reviewTarget.customerName}</span> ·{" "}
-                  {reviewTarget.machineLabel}
+                  <span className="font-semibold text-gray-900">{reviewTarget.customerName}</span> · Unit{" "}
+                  {reviewTarget.machineLabel} · {formatDateTime(reviewTarget.issueDate)}
+                </p>
+                <p>
+                  {formatCurrency(reviewTarget.transactionAmount)} paid ·{" "}
+                  <span className="font-medium text-gray-900">
+                    {formatCurrency(reviewTarget.amountRequested)} requested
+                  </span>
                 </p>
                 <p>{reviewTarget.description}</p>
+                <p className="text-xs text-gray-400">
+                  {[reviewTarget.customerPhone, reviewTarget.customerEmail].filter(Boolean).join(" · ")}
+                  {" · "}
+                  {reviewTarget.customerAddress}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>Decision</Label>

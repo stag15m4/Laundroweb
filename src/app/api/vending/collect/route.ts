@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { coinWeightToDollars, WeightUnit } from "@/lib/revenueCollection";
@@ -132,6 +133,10 @@ export async function POST(req: NextRequest) {
           throw new PeriodOverlapError(cursor!.value);
         }
 
+        // One id shared by every row this round creates, so the dashboard
+        // can show one total per pull instead of one row per machine.
+        const collectionId = randomUUID();
+
         const entries = await Promise.all(
           rows.map((row) =>
             tx.revenueEntry.create({
@@ -142,6 +147,7 @@ export async function POST(req: NextRequest) {
                 machineId: row.machineId,
                 notes: row.notes,
                 collectedBy,
+                collectionId,
               },
             })
           )

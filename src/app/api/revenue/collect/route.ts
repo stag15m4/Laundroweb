@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { coinWeightToDollars, fascardCategoryTotals, WeightUnit } from "@/lib/revenueCollection";
@@ -188,6 +189,11 @@ export async function POST(req: NextRequest) {
           throw new PeriodOverlapError(cursor!.value);
         }
 
+        // One id shared by every row this round creates, so the dashboard
+        // can show one total per physical pull instead of one row per
+        // machine (and per changer-cash line).
+        const collectionId = randomUUID();
+
         const entries = await Promise.all(
           rows.map((row) =>
             tx.revenueEntry.create({
@@ -199,6 +205,7 @@ export async function POST(req: NextRequest) {
                 notes: row.notes,
                 collectedBy: row.collectedBy,
                 excludesFascardMachines: row.excludesFascardMachines ?? false,
+                collectionId,
               },
             })
           )
@@ -210,6 +217,7 @@ export async function POST(req: NextRequest) {
                 date: periodEnd,
                 amount: round2(changerCash),
                 notes: `Coin changer, collected during the washer/dryer round, ${periodLabel}.`,
+                collectionId,
               },
             })
           : null;

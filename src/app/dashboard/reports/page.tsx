@@ -1,18 +1,48 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/layout/Header";
 import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { formatCurrency } from "@/lib/utils";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, Zap, BarChart3, RefreshCw } from "lucide-react";
-import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  RefreshCw,
+  Zap,
+} from "lucide-react";
+import { format } from "date-fns";
+import {
+  PeriodType,
+  DateRange,
+  getPeriodRange,
+  shiftAnchor,
+  formatPeriodLabel,
+  getComparisonOptions,
+  getChartBuckets,
+  inRange,
+  formatRangeLabel,
+} from "@/lib/report-periods";
 
-type RevenueEntry = { date: string; amount: string; source: string };
-type UtilityBill = { type: string; billingPeriodEnd: string; cost: string; usageAmount: string; usageUnit: string };
+type RevenueEntry = { date: string; amount: string; source: string; collectionId: string | null };
+type UtilityBill = { type: string; billingPeriodEnd: string; cost: string; usageAmount: string };
 type Expense = { date: string; amount: string; category: string };
+type CashDeposit = { date: string; amount: string };
+type ChangerLog = { date: string; amount: string };
 
 type Turns = {
   month: string;
@@ -23,11 +53,7 @@ type Turns = {
   days: number;
   daysInMonth: number;
   partialMonth: boolean;
-  measured: {
-    washerCount: number;
-    turns: number | null;
-    error: string | null;
-  };
+  measured: { washerCount: number; turns: number | null; error: string | null };
   estimated: {
     washerCount: number;
     washerRevenue: number;
@@ -48,18 +74,110 @@ const BAND_COPY: Record<string, { label: string; tone: string }> = {
   "at-capacity": { label: "At capacity — consider adding machines", tone: "text-blue-600" },
 };
 
+const PERIOD_TABS: { key: PeriodType; label: string }[] = [
+  { key: "day", label: "Day" },
+  { key: "week", label: "Week" },
+  { key: "month", label: "Month" },
+  { key: "year", label: "Year" },
+];
+
+function sumInRange(records: { date: string; amount: string | number }[], range: DateRange): number {
+  return records.filter((r) => inRange(r.date, range)).reduce((s, r) => s + Number(r.amount), 0);
+}
+
+type Metrics = {
+  grossRevenue: number;
+  coinRevenue: number;
+  cardRevenue: number;
+  vendingRevenue: number;
+  expenses: number;
+  utilities: number;
+  netProfit: number;
+  collections: number;
+  deposits: number;
+};
+
+function computeMetrics(
+  range: DateRange,
+  revenue: RevenueEntry[],
+  expenses: Expense[],
+  utilities: UtilityBill[],
+  deposits: CashDeposit[]
+): Metrics {
+  const inPeriod = revenue.filter((r) => inRange(r.date, range));
+  const grossRevenue = inPeriod.reduce((s, r) => s + Number(r.amount), 0);
+  const coinRevenue = inPeriod.filter((r) => r.source === "COIN").reduce((s, r) => s + Number(r.amount), 0);
+  const cardRevenue = inPeriod.filter((r) => r.source === "CARD").reduce((s, r) => s + Number(r.amount), 0);
+  const vendingRevenue = inPeriod.filter((r) => r.source === "VENDING").reduce((s, r) => s + Number(r.amount), 0);
+  const expensesTotal = sumInRange(expenses, range);
+  const utilitiesTotal = sumInRange(
+    utilities.map((u) => ({ date: u.billingPeriodEnd, amount: u.cost })),
+    range
+  );
+  const depositsTotal = sumInRange(deposits, range);
+
+  const collectionIds = new Set(inPeriod.filter((r) => r.collectionId).map((r) => r.collectionId));
+  const singles = inPeriod.filter((r) => !r.collectionId).length;
+
+  return {
+    grossRevenue,
+    coinRevenue,
+    cardRevenue,
+    vendingRevenue,
+    expenses: expensesTotal,
+    utilities: utilitiesTotal,
+    netProfit: grossRevenue - expensesTotal - utilitiesTotal,
+    collections: collectionIds.size + singles,
+    deposits: depositsTotal,
+  };
+}
+
+const METRIC_ROWS: { key: keyof Metrics; label: string; isCount?: boolean }[] = [
+  { key: "grossRevenue", label: "Gross Revenue" },
+  { key: "netProfit", label: "Net Profit" },
+  { key: "coinRevenue", label: "Coin Revenue" },
+  { key: "cardRevenue", label: "Card Revenue" },
+  { key: "vendingRevenue", label: "Vending Revenue" },
+  { key: "expenses", label: "Expenses" },
+  { key: "utilities", label: "Utilities" },
+  { key: "deposits", label: "Cash Deposited" },
+  { key: "collections", label: "Collections", isCount: true },
+];
+
+function DeltaBadge({ current, compare }: { current: number; compare: number }) {
+  if (compare === 0) {
+    return <span className="text-xs text-gray-400">—</span>;
+  }
+  const pct = ((current - compare) / Math.abs(compare)) * 100;
+  const up = pct >= 0;
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 text-xs font-semibold rounded-md px-1.5 py-0.5 ${
+        up ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+      }`}
+    >
+      {up ? "▲" : "▼"} {Math.abs(pct).toFixed(2)}%
+    </span>
+  );
+}
+
 export default function ReportsPage() {
   const [revenue, setRevenue] = useState<RevenueEntry[]>([]);
   const [utilities, setUtilities] = useState<UtilityBill[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [months, setMonths] = useState(6);
+  const [deposits, setDeposits] = useState<CashDeposit[]>([]);
+  const [changerLogs, setChangerLogs] = useState<ChangerLog[]>([]);
   const [turns, setTurns] = useState<Turns | null>(null);
 
+  const [periodType, setPeriodType] = useState<PeriodType>("month");
+  const [anchor, setAnchor] = useState(() => new Date());
+  const [compareKey, setCompareKey] = useState("prior-month");
+  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
+  const [comparePickerOpen, setComparePickerOpen] = useState(false);
+  const [dateJumpOpen, setDateJumpOpen] = useState(false);
+
   useEffect(() => {
-    fetch("/api/kpis/turns")
-      .then((r) => r.json())
-      .then(setTurns)
-      .catch(() => undefined);
+    fetch("/api/kpis/turns").then((r) => r.json()).then(setTurns).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -67,68 +185,67 @@ export default function ReportsPage() {
       fetch("/api/revenue").then((r) => r.json()),
       fetch("/api/utilities").then((r) => r.json()),
       fetch("/api/expenses").then((r) => r.json()),
-    ]).then(([rev, util, exp]) => {
+      fetch("/api/cash/deposits").then((r) => r.json()),
+      fetch("/api/cash/changer-log").then((r) => r.json()),
+    ]).then(([rev, util, exp, dep, changer]) => {
       setRevenue(rev);
       setUtilities(util);
       setExpenses(exp);
+      if (Array.isArray(dep)) setDeposits(dep);
+      if (Array.isArray(changer)) setChangerLogs(changer);
     });
   }, []);
 
-  const monthLabels = Array.from({ length: months }, (_, i) => {
-    const d = subMonths(new Date(), months - 1 - i);
-    return format(d, "MMM yy");
-  });
+  // Switching period type keeps the same comparison *shape* where it still
+  // makes sense (e.g. "prior year" exists for every type); otherwise falls
+  // back to that type's first option rather than carrying over a key (say
+  // "4-weeks-prior") that type no longer offers.
+  const comparisonOptions = useMemo(() => getComparisonOptions(periodType, anchor), [periodType, anchor]);
+  useEffect(() => {
+    if (compareKey === "custom") return;
+    if (!comparisonOptions.some((o) => o.key === compareKey)) {
+      setCompareKey(comparisonOptions[0].key);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodType]);
 
-  const monthlyData = monthLabels.map((label, i) => {
-    const d = subMonths(new Date(), months - 1 - i);
-    const start = startOfMonth(d);
-    const end = endOfMonth(d);
+  const currentRange = getPeriodRange(periodType, anchor);
+  const compareRange: DateRange | null = useMemo(() => {
+    if (compareKey === "custom") {
+      if (!customRange.start || !customRange.end) return null;
+      const start = new Date(`${customRange.start}T00:00:00`);
+      const end = new Date(`${customRange.end}T00:00:00`);
+      end.setDate(end.getDate() + 1); // the picked end day is inclusive
+      return { start, end };
+    }
+    return comparisonOptions.find((o) => o.key === compareKey)?.range ?? null;
+  }, [compareKey, customRange, comparisonOptions]);
 
-    const monthRevenue = revenue
-      .filter((r) => new Date(r.date) >= start && new Date(r.date) <= end)
-      .reduce((s, r) => s + Number(r.amount), 0);
+  const currentMetrics = computeMetrics(currentRange, revenue, expenses, utilities, deposits);
+  const compareMetrics = compareRange
+    ? computeMetrics(compareRange, revenue, expenses, utilities, deposits)
+    : null;
 
-    const monthUtilities = utilities
-      .filter((u) => new Date(u.billingPeriodEnd) >= start && new Date(u.billingPeriodEnd) <= end)
-      .reduce((s, u) => s + Number(u.cost), 0);
+  const buckets = getChartBuckets(periodType, anchor);
+  const chartData = buckets.map((b) => ({
+    label: b.label,
+    amount: revenue.filter((r) => inRange(r.date, b.range)).reduce((s, r) => s + Number(r.amount), 0),
+  }));
 
-    const monthExpenses = expenses
-      .filter((e) => new Date(e.date) >= start && new Date(e.date) <= end)
-      .reduce((s, e) => s + Number(e.amount), 0);
+  const compareLabel =
+    compareKey === "custom" && compareRange
+      ? formatRangeLabel(compareRange)
+      : comparisonOptions.find((o) => o.key === compareKey)?.label ?? "Compare";
 
-    const totalCosts = monthUtilities + monthExpenses;
-    const netProfit = monthRevenue - totalCosts;
-
-    return { month: label, Revenue: monthRevenue, "Utilities + Expenses": totalCosts, "Net Profit": netProfit };
-  });
-
-  const totalRevenue = revenue.reduce((s, r) => s + Number(r.amount), 0);
-  const totalUtilities = utilities.reduce((s, u) => s + Number(u.cost), 0);
-  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
-  const netProfit = totalRevenue - totalUtilities - totalExpenses;
-
-  const electricBills = utilities.filter((u) => u.type === "ELECTRIC");
-  const avgKwh = electricBills.length
-    ? electricBills.reduce((s, b) => s + Number(b.usageAmount), 0) / electricBills.length
-    : 0;
-  const avgElectricCost = electricBills.length
-    ? electricBills.reduce((s, b) => s + Number(b.cost), 0) / electricBills.length
-    : 0;
+  const periodUtilities = utilities.filter((u) => inRange(u.billingPeriodEnd, currentRange));
+  const periodUtilitiesTotal = periodUtilities.reduce((s, u) => s + Number(u.cost), 0);
+  const periodExpenses = expenses.filter((e) => inRange(e.date, currentRange));
+  const periodExpensesTotal = periodExpenses.reduce((s, e) => s + Number(e.amount), 0);
+  const periodChangerCash = sumInRange(changerLogs, currentRange);
 
   return (
     <div>
-      <Header title="Reports" description="Financial summary and trend analysis">
-        <Select value={String(months)} onValueChange={(v) => setMonths(Number(v))}>
-          <SelectTrigger className="w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="3">Last 3 months</SelectItem>
-            <SelectItem value="6">Last 6 months</SelectItem>
-            <SelectItem value="12">Last 12 months</SelectItem>
-          </SelectContent>
-        </Select>
-      </Header>
+      <Header title="Reports" description="Financial summary, period comparisons, and trend analysis" />
 
       <PageTabs tabs={[
         { label: "Revenue", href: "/dashboard/revenue" },
@@ -138,8 +255,83 @@ export default function ReportsPage() {
       ]} />
 
       <div className="p-6 space-y-6">
-        {/* Turns per day — the productivity number, shown with its workings so
-            nobody mistakes an estimate for a meter reading. */}
+        {/* ── Period selector ──────────────────────────────────────────── */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-50">
+            {PERIOD_TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setPeriodType(t.key)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  periodType === t.key ? "bg-gray-900 text-white" : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={() => setAnchor((a) => shiftAnchor(periodType, a, -1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-semibold min-w-[11rem] text-center">
+              {formatPeriodLabel(periodType, anchor)}
+            </span>
+            <Button variant="outline" size="icon" onClick={() => setAnchor((a) => shiftAnchor(periodType, a, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" onClick={() => setDateJumpOpen(true)}>
+              <Calendar className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Headline total + chart ──────────────────────────────────── */}
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-sm text-gray-500">Gross Revenue</p>
+            <p className="text-3xl font-bold mt-1">{formatCurrency(currentMetrics.grossRevenue)}</p>
+            {chartData.length > 0 && (
+              <ResponsiveContainer width="100%" height={220} className="mt-4">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                  <Bar dataKey="amount" fill="#16a34a" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Metrics vs. comparison period ───────────────────────────── */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Metrics</CardTitle>
+            <Button variant="outline" size="sm" onClick={() => setComparePickerOpen(true)}>
+              vs. {compareLabel}
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-gray-50">
+              {METRIC_ROWS.map((m) => (
+                <div key={m.key} className="flex items-center justify-between px-6 py-3">
+                  <p className="text-sm text-gray-500">{m.label}</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-sm font-semibold">
+                      {m.isCount ? currentMetrics[m.key] : formatCurrency(currentMetrics[m.key])}
+                    </p>
+                    {compareMetrics && <DeltaBadge current={currentMetrics[m.key]} compare={compareMetrics[m.key]} />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Turns per day — unchanged from before ───────────────────── */}
         {turns && (
           <Card>
             <CardHeader>
@@ -157,20 +349,14 @@ export default function ReportsPage() {
               ) : (
                 <div className="grid gap-6 lg:grid-cols-3">
                   <div>
-                    <p className="text-4xl font-bold tabular-nums">
-                      {turns.turnsPerDay.toFixed(2)}
-                    </p>
+                    <p className="text-4xl font-bold tabular-nums">{turns.turnsPerDay.toFixed(2)}</p>
                     <p className={`mt-1 text-sm font-medium ${BAND_COPY[turns.band ?? "low"].tone}`}>
                       {BAND_COPY[turns.band ?? "low"].label}
                     </p>
-
-                    {/* Where this sits between "quiet" and "full". */}
                     <div className="mt-3 h-2 w-full rounded-full bg-gray-100 overflow-hidden">
                       <div
                         className="h-full rounded-full bg-blue-500"
-                        style={{
-                          width: `${Math.min(100, (turns.turnsPerDay / turns.thresholds.atCapacity) * 100)}%`,
-                        }}
+                        style={{ width: `${Math.min(100, (turns.turnsPerDay / turns.thresholds.atCapacity) * 100)}%` }}
                       />
                     </div>
                     <div className="mt-1 flex justify-between text-xs text-gray-400">
@@ -191,17 +377,13 @@ export default function ReportsPage() {
                             Measured — {turns.measured.washerCount} washer
                             {turns.measured.washerCount === 1 ? "" : "s"} with a card reader
                           </dt>
-                          <dd className="tabular-nums">
-                            {turns.measured.turns?.toFixed(0) ?? "—"}
-                          </dd>
+                          <dd className="tabular-nums">{turns.measured.turns?.toFixed(0) ?? "—"}</dd>
                         </div>
                       )}
                       {turns.estimated.washerCount > 0 && (
                         <>
                           <div className="flex justify-between gap-4">
-                            <dt className="text-gray-500">
-                              Cash-only washer revenue ({turns.estimated.washerCount})
-                            </dt>
+                            <dt className="text-gray-500">Cash-only washer revenue ({turns.estimated.washerCount})</dt>
                             <dd className="tabular-nums">{formatCurrency(turns.estimated.washerRevenue)}</dd>
                           </div>
                           <div className="flex justify-between gap-4">
@@ -212,9 +394,7 @@ export default function ReportsPage() {
                           </div>
                           <div className="flex justify-between gap-4">
                             <dt className="text-gray-500">= estimated washes</dt>
-                            <dd className="tabular-nums">
-                              {turns.estimated.estimatedTurns?.toFixed(0) ?? "—"}
-                            </dd>
+                            <dd className="tabular-nums">{turns.estimated.estimatedTurns?.toFixed(0) ?? "—"}</dd>
                           </div>
                         </>
                       )}
@@ -224,45 +404,39 @@ export default function ReportsPage() {
                           {turns.days === 1 ? "" : "s"}
                           {turns.partialMonth && " so far"}
                         </dt>
-                        <dd className="tabular-nums font-semibold">
-                          {turns.turnsPerDay.toFixed(2)}
-                        </dd>
+                        <dd className="tabular-nums font-semibold">{turns.turnsPerDay.toFixed(2)}</dd>
                       </div>
                     </dl>
 
                     {turns.measured.error && (
                       <p className="mt-3 text-xs text-red-700 bg-red-50 rounded-md px-3 py-2">
-                        Couldn&apos;t reach FasCard for the measured washers this time
-                        ({turns.measured.error}), so they&apos;re counted as 0 turns above
-                        until the next refresh.
+                        Couldn&apos;t reach FasCard for the measured washers this time ({turns.measured.error}), so
+                        they&apos;re counted as 0 turns above until the next refresh.
                       </p>
                     )}
                     {turns.estimated.ambiguousRevenue > 0 && (
                       <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
-                        {formatCurrency(turns.estimated.ambiguousRevenue)} of this month&apos;s
-                        washer revenue was logged as &quot;All washers&quot; rather than a
-                        specific machine. Now that some washers are measured directly, that
-                        can&apos;t be split between them and the cash-only ones without
-                        double-counting, so it&apos;s left out of the estimate. Log collections
-                        per machine on the Revenue page to include it.
+                        {formatCurrency(turns.estimated.ambiguousRevenue)} of this month&apos;s washer revenue was
+                        logged as &quot;All washers&quot; rather than a specific machine. Now that some washers are
+                        measured directly, that can&apos;t be split between them and the cash-only ones without
+                        double-counting, so it&apos;s left out of the estimate. Log collections per machine on the
+                        Revenue page to include it.
                       </p>
                     )}
                     {turns.estimated.unattributedRevenue > 0 && (
                       <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
-                        {formatCurrency(turns.estimated.unattributedRevenue)} of this month&apos;s
-                        revenue is not marked as washers or dryers, so it is left out.
-                        Tag collections on the Revenue page to sharpen this.
+                        {formatCurrency(turns.estimated.unattributedRevenue)} of this month&apos;s revenue is not
+                        marked as washers or dryers, so it is left out. Tag collections on the Revenue page to
+                        sharpen this.
                       </p>
                     )}
-                    {turns.estimated.washerCount > 0 &&
-                      turns.estimated.pricedWashers < turns.estimated.washerCount && (
-                        <p className="mt-2 text-xs text-amber-700">
-                          {turns.estimated.washerCount - turns.estimated.pricedWashers} of{" "}
-                          {turns.estimated.washerCount} cash-only washers have no configured
-                          price, so the assumed vend comes from the other{" "}
-                          {turns.estimated.pricedWashers}.
-                        </p>
-                      )}
+                    {turns.estimated.washerCount > 0 && turns.estimated.pricedWashers < turns.estimated.washerCount && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        {turns.estimated.washerCount - turns.estimated.pricedWashers} of{" "}
+                        {turns.estimated.washerCount} cash-only washers have no configured price, so the assumed
+                        vend comes from the other {turns.estimated.pricedWashers}.
+                      </p>
+                    )}
                     <p className="mt-2 text-xs text-gray-400">
                       {turns.measured.washerCount > 0
                         ? "Washers with a FasCard reader (Equipment → FasCard Machine #) show real counts. Cash-only washers are still inferred from revenue ÷ the average cycle price."
@@ -275,105 +449,21 @@ export default function ReportsPage() {
           </Card>
         )}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2 mb-1">
-                <TrendingUp className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-gray-500">Total Revenue</p>
-              </div>
-              <p className="text-2xl font-bold text-green-600">{formatCurrency(totalRevenue)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2 mb-1">
-                <TrendingDown className="h-4 w-4 text-red-500" />
-                <p className="text-sm text-gray-500">Total Costs</p>
-              </div>
-              <p className="text-2xl font-bold text-red-600">{formatCurrency(totalUtilities + totalExpenses)}</p>
-              <p className="text-xs text-gray-400">Utilities + Expenses</p>
-            </CardContent>
-          </Card>
-          <Card className={netProfit >= 0 ? "border-green-200" : "border-red-200"}>
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2 mb-1">
-                <DollarSign className="h-4 w-4 text-blue-600" />
-                <p className="text-sm text-gray-500">Net Profit</p>
-              </div>
-              <p className={`text-2xl font-bold ${netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {formatCurrency(netProfit)}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2 mb-1">
-                <Zap className="h-4 w-4 text-yellow-500" />
-                <p className="text-sm text-gray-500">Avg Electric</p>
-              </div>
-              <p className="text-2xl font-bold">{formatCurrency(avgElectricCost)}</p>
-              <p className="text-xs text-gray-400">{avgKwh.toFixed(0)} kWh / month</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Revenue vs. Costs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                <Legend />
-                <Bar dataKey="Revenue" fill="#16a34a" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="Utilities + Expenses" fill="#ef4444" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Net Profit Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                <Line
-                  type="monotone"
-                  dataKey="Net Profit"
-                  stroke="#2563eb"
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
+        {/* ── Breakdowns, scoped to the selected period ───────────────── */}
         <div className="grid grid-cols-2 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Utility Cost Breakdown</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Zap className="h-4 w-4 text-yellow-500" />
+                Utility Cost Breakdown
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {(["ELECTRIC", "WATER", "GAS", "SEWER"] as const).map((type) => {
-                const typeBills = utilities.filter((u) => u.type === type);
+                const typeBills = periodUtilities.filter((u) => u.type === type);
                 const total = typeBills.reduce((s, b) => s + Number(b.cost), 0);
                 if (!total) return null;
-                const pct = ((total / totalUtilities) * 100).toFixed(0);
+                const pct = periodUtilitiesTotal > 0 ? ((total / periodUtilitiesTotal) * 100).toFixed(0) : "0";
                 return (
                   <div key={type} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                     <div className="flex items-center gap-2">
@@ -384,7 +474,15 @@ export default function ReportsPage() {
                   </div>
                 );
               })}
-              {totalUtilities === 0 && <p className="text-sm text-gray-400 py-4 text-center">No utility data.</p>}
+              {periodChangerCash > 0 && (
+                <div className="flex items-center justify-between py-2 border-t border-gray-100 mt-1 pt-3">
+                  <span className="text-xs text-gray-400">Coin changer cash this period (not a cost)</span>
+                  <span className="text-sm text-gray-500">{formatCurrency(periodChangerCash)}</span>
+                </div>
+              )}
+              {periodUtilitiesTotal === 0 && (
+                <p className="text-sm text-gray-400 py-4 text-center">No utility bills in this period.</p>
+              )}
             </CardContent>
           </Card>
 
@@ -394,14 +492,14 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent>
               {Object.entries(
-                expenses.reduce((acc, e) => {
+                periodExpenses.reduce((acc, e) => {
                   acc[e.category] = (acc[e.category] ?? 0) + Number(e.amount);
                   return acc;
                 }, {} as Record<string, number>)
               )
                 .sort((a, b) => b[1] - a[1])
                 .map(([cat, total]) => {
-                  const pct = totalExpenses > 0 ? ((total / totalExpenses) * 100).toFixed(0) : "0";
+                  const pct = periodExpensesTotal > 0 ? ((total / periodExpensesTotal) * 100).toFixed(0) : "0";
                   return (
                     <div key={cat} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                       <div className="flex items-center gap-2">
@@ -412,11 +510,94 @@ export default function ReportsPage() {
                     </div>
                   );
                 })}
-              {totalExpenses === 0 && <p className="text-sm text-gray-400 py-4 text-center">No expense data.</p>}
+              {periodExpensesTotal === 0 && (
+                <p className="text-sm text-gray-400 py-4 text-center">No expenses in this period.</p>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* ── Compare picker ────────────────────────────────────────────── */}
+      <Dialog open={comparePickerOpen} onOpenChange={setComparePickerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Compare</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1">
+            {comparisonOptions.map((o) => (
+              <button
+                key={o.key}
+                onClick={() => {
+                  setCompareKey(o.key);
+                  setComparePickerOpen(false);
+                }}
+                className={`w-full flex items-center justify-between rounded-lg px-3 py-3 text-left text-sm hover:bg-gray-50 ${
+                  compareKey === o.key ? "bg-gray-50 font-semibold" : ""
+                }`}
+              >
+                <span>{o.label}</span>
+                <span className="text-gray-400">{format(o.range.start, "MMM d, yyyy")}</span>
+              </button>
+            ))}
+            <button
+              onClick={() => setCompareKey("custom")}
+              className={`w-full flex items-center justify-between rounded-lg px-3 py-3 text-left text-sm hover:bg-gray-50 ${
+                compareKey === "custom" ? "bg-gray-50 font-semibold" : ""
+              }`}
+            >
+              Custom range
+            </button>
+            {compareKey === "custom" && (
+              <div className="grid grid-cols-2 gap-3 px-3 pt-2">
+                <div className="space-y-1.5">
+                  <Label>Start</Label>
+                  <Input
+                    type="date"
+                    value={customRange.start}
+                    onChange={(e) => setCustomRange((r) => ({ ...r, start: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>End</Label>
+                  <Input
+                    type="date"
+                    value={customRange.end}
+                    onChange={(e) => setCustomRange((r) => ({ ...r, end: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          {compareKey === "custom" && (
+            <Button className="w-full" onClick={() => setComparePickerOpen(false)} disabled={!customRange.start || !customRange.end}>
+              Apply
+            </Button>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Jump to date ──────────────────────────────────────────────── */}
+      <Dialog open={dateJumpOpen} onOpenChange={setDateJumpOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Jump to date</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              type="date"
+              defaultValue={format(anchor, "yyyy-MM-dd")}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setAnchor(new Date(`${e.target.value}T00:00:00`));
+              }}
+            />
+            <Button className="w-full" onClick={() => setDateJumpOpen(false)}>
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

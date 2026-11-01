@@ -231,8 +231,16 @@ model RevenueEntry {
   excludesFascardMachines Boolean @default(false)
   notes       String?
   collectedBy String?
+  // Shared by every row (and the CoinChangerLog row, if any) written in the
+  // same Collect Quarters or Collect Vending Revenue submission, so the
+  // dashboard can show one total per physical pull instead of one row per
+  // machine. Null for a manually-added single entry, which was never part
+  // of a batch collection.
+  collectionId String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+
+  @@index([collectionId])
 }
 
 /// Cash pulled from the coin changer (bills exchanged for quarters) -- not
@@ -246,7 +254,13 @@ model CoinChangerLog {
   date      DateTime
   amount    Decimal  @db.Decimal(10, 2)
   notes     String?
+  // Matches the collectionId of the RevenueEntry rows from the same Collect
+  // Quarters round, so a pull's total includes the changer cash collected
+  // on that same visit.
+  collectionId String?
   createdAt DateTime @default(now())
+
+  @@index([collectionId])
 }
 
 /// A deposit of accumulated cash on hand (vending revenue + coin changer

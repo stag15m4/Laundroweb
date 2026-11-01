@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { CollectQuartersDialog } from "@/components/revenue/CollectQuartersDialog";
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, Trash2, Pencil, DollarSign } from "lucide-react";
+import { Plus, Trash2, Pencil, DollarSign, ChevronDown, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { format, startOfMonth, eachDayOfInterval, endOfMonth } from "date-fns";
 
@@ -27,9 +27,68 @@ type RevenueEntry = {
   collectedBy: string | null;
   machine: { id: string; name: string } | null;
   machineType: string | null;
+  collectionId: string | null;
 };
 
+type ChangerLog = { id: string; date: string; amount: string; collectionId: string | null };
+
 type Machine = { id: string; name: string; type: string };
+
+// One Collect Quarters or Collect Vending Revenue round writes several
+// RevenueEntry rows (one per machine) plus, for a quarters round, a
+// CoinChangerLog row -- all sharing one collectionId. Grouping them back
+// together here is what turns "9 scattered rows" into "one pull, one
+// total", with the breakdown still one click away.
+type DisplayRow =
+  | { kind: "single"; date: string; entry: RevenueEntry }
+  | {
+      kind: "group";
+      date: string;
+      collectionId: string;
+      total: number;
+      sourceLabel: string;
+      collectedBy: string | null;
+      entries: RevenueEntry[];
+      changerAmount: number | null;
+    };
+
+function sourceLabelFor(entries: RevenueEntry[]): string {
+  return entries[0]?.source === "VENDING" ? "Vending" : "Washers & Dryers";
+}
+
+function buildDisplayRows(entries: RevenueEntry[], changerLogs: ChangerLog[]): DisplayRow[] {
+  const byCollection = new Map<string, RevenueEntry[]>();
+  const singles: RevenueEntry[] = [];
+
+  for (const entry of entries) {
+    if (entry.collectionId) {
+      const list = byCollection.get(entry.collectionId) ?? [];
+      list.push(entry);
+      byCollection.set(entry.collectionId, list);
+    } else {
+      singles.push(entry);
+    }
+  }
+
+  const rows: DisplayRow[] = singles.map((entry) => ({ kind: "single", date: entry.date, entry }));
+
+  for (const [collectionId, group] of byCollection) {
+    const changer = changerLogs.find((c) => c.collectionId === collectionId) ?? null;
+    const entryTotal = group.reduce((s, e) => s + Number(e.amount), 0);
+    rows.push({
+      kind: "group",
+      date: group[0].date,
+      collectionId,
+      total: entryTotal + Number(changer?.amount ?? 0),
+      sourceLabel: sourceLabelFor(group),
+      collectedBy: group[0].collectedBy,
+      entries: group,
+      changerAmount: changer ? Number(changer.amount) : null,
+    });
+  }
+
+  return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
 
 /**
  * The generated notes from tools like quarter collection pack several facts
@@ -52,9 +111,11 @@ export default function RevenuePage() {
   const isOwner = (session?.user as { role?: string })?.role === "OWNER";
 
   const [entries, setEntries] = useState<RevenueEntry[]>([]);
+  const [changerLogs, setChangerLogs] = useState<ChangerLog[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [open, setOpen] = useState(false);
   const [noteDetail, setNoteDetail] = useState<RevenueEntry | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const emptyForm = {
     date: format(new Date(), "yyyy-MM-dd"),
     amount: "",
@@ -80,6 +141,7 @@ export default function RevenuePage() {
 
   function refreshEntries() {
     fetch("/api/revenue").then((r) => r.json()).then(setEntries);
+    fetch("/api/cash/changer-log").then((r) => r.json()).then((d) => Array.isArray(d) && setChangerLogs(d));
   }
 
   useEffect(() => {
@@ -88,6 +150,16 @@ export default function RevenuePage() {
   }, []);
 
   const total = entries.reduce((s, e) => s + Number(e.amount), 0);
+  const displayRows = buildDisplayRows(entries, changerLogs);
+
+  function toggleGroup(collectionId: string) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(collectionId)) next.delete(collectionId);
+      else next.add(collectionId);
+      return next;
+    });
+  }
 
   const chartData = (() => {
     const now = new Date();
@@ -168,6 +240,50 @@ export default function RevenuePage() {
     await fetch(`/api/revenue/${id}`, { method: "DELETE" });
     setEntries((prev) => prev.filter((e) => e.id !== id));
     refreshCash();
+  }
+
+  // `indented` is true for a row shown inside an expanded collection group,
+  // so its own date/notes line reads as "part of that pull" rather than a
+  // second, unrelated entry on the same day.
+  function renderEntryRow(e: RevenueEntry, indented = false) {
+    const note = e.notes ? noteSummary(e.notes) : null;
+    return (
+      <tr key={e.id} className={`border-b border-gray-50 hover:bg-gray-50 ${indented ? "bg-gray-50/60" : ""}`}>
+        <td className={`px-6 py-3 ${indented ? "pl-12 text-gray-400" : ""}`}>{formatDate(e.date)}</td>
+        <td className={`px-6 py-3 font-semibold ${indented ? "text-gray-500" : "text-green-600"}`}>
+          {formatCurrency(e.amount)}
+        </td>
+        <td className="px-6 py-3"><Badge variant="secondary">{e.source}</Badge></td>
+        <td className="px-6 py-3 text-gray-500">
+          {e.machine?.name ?? (e.machineType ? MACHINE_TYPE_LABELS[e.machineType] ?? e.machineType : "—")}
+        </td>
+        <td className="px-6 py-3 text-gray-500">{e.collectedBy ?? "—"}</td>
+        <td className="px-6 py-3 text-gray-400">
+          {note ? (
+            <button
+              type="button"
+              onClick={() => setNoteDetail(e)}
+              aria-label={`View full note for ${formatDate(e.date)} ${e.machine?.name ?? (e.machineType ? MACHINE_TYPE_LABELS[e.machineType] ?? e.machineType : e.source)} entry`}
+              className="block w-40 sm:w-64 truncate text-left hover:text-gray-700 hover:underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            >
+              {note.summary}
+            </button>
+          ) : (
+            "—"
+          )}
+        </td>
+        <td className="px-6 py-3">
+          <div className="flex items-center">
+            <Button variant="ghost" size="icon" onClick={() => openEdit(e)}>
+              <Pencil className="h-4 w-4 text-gray-400" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}>
+              <Trash2 className="h-4 w-4 text-red-400" />
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
   }
 
   return (
@@ -329,42 +445,56 @@ export default function RevenuePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((e) => {
-                    const note = e.notes ? noteSummary(e.notes) : null;
+                  {displayRows.map((row) => {
+                    if (row.kind === "single") {
+                      return renderEntryRow(row.entry);
+                    }
+
+                    const expanded = expandedGroups.has(row.collectionId);
                     return (
-                    <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-6 py-3">{formatDate(e.date)}</td>
-                      <td className="px-6 py-3 font-semibold text-green-600">{formatCurrency(e.amount)}</td>
-                      <td className="px-6 py-3"><Badge variant="secondary">{e.source}</Badge></td>
-                      <td className="px-6 py-3 text-gray-500">
-                        {e.machine?.name ?? (e.machineType ? MACHINE_TYPE_LABELS[e.machineType] ?? e.machineType : "—")}
-                      </td>
-                      <td className="px-6 py-3 text-gray-500">{e.collectedBy ?? "—"}</td>
-                      <td className="px-6 py-3 text-gray-400">
-                        {note ? (
-                          <button
-                            type="button"
-                            onClick={() => setNoteDetail(e)}
-                            aria-label={`View full note for ${formatDate(e.date)} ${e.machine?.name ?? (e.machineType ? MACHINE_TYPE_LABELS[e.machineType] ?? e.machineType : e.source)} entry`}
-                            className="block w-40 sm:w-64 truncate text-left hover:text-gray-700 hover:underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                          >
-                            {note.summary}
-                          </button>
-                        ) : (
-                          "—"
+                      <Fragment key={row.collectionId}>
+                        <tr
+                          className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
+                          onClick={() => toggleGroup(row.collectionId)}
+                        >
+                          <td className="px-6 py-3">
+                            <span className="inline-flex items-center gap-1.5">
+                              {expanded ? (
+                                <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
+                              )}
+                              {formatDate(row.date)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 font-semibold text-green-600">{formatCurrency(row.total)}</td>
+                          <td className="px-6 py-3">
+                            <Badge variant="secondary">Collection</Badge>
+                          </td>
+                          <td className="px-6 py-3 text-gray-500">{row.sourceLabel}</td>
+                          <td className="px-6 py-3 text-gray-500">{row.collectedBy ?? "—"}</td>
+                          <td className="px-6 py-3 text-gray-400">
+                            {row.entries.length} machine{row.entries.length === 1 ? "" : "s"}
+                            {row.changerAmount != null && " · coin changer"}
+                          </td>
+                          <td className="px-6 py-3" />
+                        </tr>
+                        {expanded && row.entries.map((e) => renderEntryRow(e, true))}
+                        {expanded && row.changerAmount != null && (
+                          <tr key={`${row.collectionId}-changer`} className="border-b border-gray-50 bg-gray-50/60">
+                            <td className="px-6 py-2 pl-12 text-gray-400 text-xs">{formatDate(row.date)}</td>
+                            <td className="px-6 py-2 text-gray-500 text-xs">{formatCurrency(row.changerAmount)}</td>
+                            <td className="px-6 py-2" colSpan={2}>
+                              <span className="text-gray-400 text-xs">
+                                Coin changer cash — not revenue, added to Cash on Hand
+                              </span>
+                            </td>
+                            <td className="px-6 py-2" />
+                            <td className="px-6 py-2" />
+                            <td className="px-6 py-2" />
+                          </tr>
                         )}
-                      </td>
-                      <td className="px-6 py-3">
-                        <div className="flex items-center">
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(e)}>
-                            <Pencil className="h-4 w-4 text-gray-400" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}>
-                            <Trash2 className="h-4 w-4 text-red-400" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
+                      </Fragment>
                     );
                   })}
                 </tbody>

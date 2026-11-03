@@ -24,6 +24,7 @@ import {
   Calendar,
   RefreshCw,
   Zap,
+  DollarSign,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -66,6 +67,24 @@ type Turns = {
   };
   unavailableReason: string | null;
 };
+
+type CostPerLoad = {
+  costPerLoad: number | null;
+  costMonth: string;
+  turnsMonth: string;
+  forecastedTurns: number | null;
+  turnsPerDay: number | null;
+  totalWasherCount: number;
+  daysInMonth: number;
+  partialMonth: boolean;
+  cost: { fixed: number; utilities: number; total: number; utilitiesByType: { type: string; cost: number }[] };
+  unavailableReason: string | null;
+};
+
+function monthLabel(m: string): string {
+  const [y, mo] = m.split("-").map(Number);
+  return format(new Date(Date.UTC(y, mo - 1, 1)), "MMMM yyyy");
+}
 
 const BAND_COPY: Record<string, { label: string; tone: string }> = {
   low: { label: "Below a busy store", tone: "text-amber-600" },
@@ -168,6 +187,7 @@ export default function ReportsPage() {
   const [deposits, setDeposits] = useState<CashDeposit[]>([]);
   const [changerLogs, setChangerLogs] = useState<ChangerLog[]>([]);
   const [turns, setTurns] = useState<Turns | null>(null);
+  const [costPerLoad, setCostPerLoad] = useState<CostPerLoad | null>(null);
 
   const [periodType, setPeriodType] = useState<PeriodType>("month");
   const [anchor, setAnchor] = useState(() => new Date());
@@ -178,6 +198,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     fetch("/api/kpis/turns").then((r) => r.json()).then(setTurns).catch(() => undefined);
+    fetch("/api/kpis/cost-per-load").then((r) => r.json()).then(setCostPerLoad).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -441,6 +462,69 @@ export default function ReportsPage() {
                       {turns.measured.washerCount > 0
                         ? "Washers with a FasCard reader (Equipment → FasCard Machine #) show real counts. Cash-only washers are still inferred from revenue ÷ the average cycle price."
                         : "Cycles are inferred from money until a machine has a FasCard reader; the vend price is the average cycle price across your washers."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Cost per load — last month's settled costs ÷ this month's projected turns ── */}
+        {costPerLoad && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-blue-600" />
+                Cost Per Load
+                <span className="ml-1 text-xs font-normal text-gray-400">
+                  {monthLabel(costPerLoad.costMonth)} costs ÷ {monthLabel(costPerLoad.turnsMonth)} pace
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {costPerLoad.costPerLoad === null ? (
+                <p className="text-sm text-gray-500">{costPerLoad.unavailableReason}</p>
+              ) : (
+                <div className="grid gap-6 lg:grid-cols-3">
+                  <div>
+                    <p className="text-4xl font-bold tabular-nums">{formatCurrency(costPerLoad.costPerLoad)}</p>
+                    <p className="mt-1 text-sm font-medium text-gray-500">per projected load, {monthLabel(costPerLoad.turnsMonth)}</p>
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                      How this was worked out
+                    </p>
+                    <dl className="space-y-1 text-sm">
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-gray-500">Fixed costs ({monthLabel(costPerLoad.costMonth)})</dt>
+                        <dd className="tabular-nums">{formatCurrency(costPerLoad.cost.fixed)}</dd>
+                      </div>
+                      {costPerLoad.cost.utilitiesByType.map((u) => (
+                        <div key={u.type} className="flex justify-between gap-4">
+                          <dt className="text-gray-500 pl-3">+ {u.type.charAt(0) + u.type.slice(1).toLowerCase()}</dt>
+                          <dd className="tabular-nums">{formatCurrency(u.cost)}</dd>
+                        </div>
+                      ))}
+                      <div className="flex justify-between gap-4 border-t pt-1">
+                        <dt className="text-gray-500">= total cost</dt>
+                        <dd className="tabular-nums">{formatCurrency(costPerLoad.cost.total)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-gray-500">
+                          ÷ projected loads ({costPerLoad.turnsPerDay?.toFixed(2)}/washer/day ×{" "}
+                          {costPerLoad.totalWasherCount} washers × {costPerLoad.daysInMonth} days
+                          {costPerLoad.partialMonth && ", at the current pace"})
+                        </dt>
+                        <dd className="tabular-nums font-semibold">{costPerLoad.forecastedTurns?.toFixed(0)}</dd>
+                      </div>
+                    </dl>
+                    <p className="mt-3 text-xs text-gray-400">
+                      Costs are a month behind on purpose, since utility bills arrive in arrears -- {monthLabel(costPerLoad.costMonth)}&apos;s
+                      bills are the most recent ones actually settled. Water, gas, and electric scale with usage, so
+                      this should track close to flat month to month; a jump with no usage reason is worth checking
+                      for a leak.
                     </p>
                   </div>
                 </div>

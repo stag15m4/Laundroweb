@@ -1,6 +1,6 @@
 # Laundroweb write API — integration guide for Alfred
 
-Laundroweb exposes four write endpoints for Alfred. All use a **two-step
+Laundroweb exposes six write endpoints for Alfred. All use a **two-step
 propose/confirm flow**: nothing is ever written by a single call.
 
 You cannot change anything in Laundroweb on your own. You propose a change,
@@ -322,6 +322,119 @@ can usefully process it.
 
 ---
 
+## `POST /api/alfred/expenses`
+
+Logs a one-off business expense — the invoice route for anything that isn't
+on a recurring schedule. For an invoice that *is* recurring (rent, a monthly
+service contract), use `/api/alfred/recurring-expenses` below instead; this
+endpoint only ever writes a single row.
+
+### Propose request
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `date` | string | **yes** | `YYYY-MM-DD` — the invoice date, not today's date |
+| `category` | string | **yes** | A short label, e.g. `"Repairs"`, `"Supplies"`, `"Insurance"`. Not checked against a fixed list — use whatever the dashboard's Expenses page would show, matching existing categories where one fits |
+| `description` | string | **yes** | What the expense was for |
+| `amount` | number \| string | **yes** | Dollars |
+| `vendor` | string | no | |
+| `notes` | string | no | |
+
+```json
+{
+  "date": "2026-10-28",
+  "category": "Repairs",
+  "description": "Dryer belt replacement, unit D45-3",
+  "amount": 245.00,
+  "vendor": "Acme Parts Co"
+}
+```
+
+### Propose response — `200`
+
+Same envelope as the other endpoints.
+
+### Confirm
+
+```json
+{ "confirmationToken": "…" }
+```
+
+Response — `200`:
+
+```json
+{
+  "status": "confirmed",
+  "summary": "…",
+  "expenseId": "…",
+  "record": { "…": "the created expense" }
+}
+```
+
+---
+
+## `POST /api/alfred/recurring-expenses`
+
+Sets up a template that generates its own `Expense` row on a fixed schedule —
+rent, insurance, pest control, a monthly service contract. Laundroweb has no
+background scheduler: the first (and any catch-up) occurrence is generated
+lazily, the same way it would be for a template made from the dashboard, the
+next time the Expenses or Reports page loads. **Confirming here never itself
+writes an `Expense` row.**
+
+### Propose request
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `category` | string | **yes** | Same free-text convention as `/api/alfred/expenses` |
+| `description` | string | **yes** | |
+| `amount` | number \| string | **yes** | Dollars, charged once per occurrence |
+| `frequency` | string | **yes** | `WEEKLY` \| `MONTHLY` \| `QUARTERLY` \| `YEARLY`. Case-insensitive |
+| `startDate` | string | **yes** | `YYYY-MM-DD` — when the schedule begins. A past date catches up on every occurrence since then once confirmed |
+| `vendor` | string | no | |
+| `notes` | string | no | |
+
+```json
+{
+  "category": "Pest Control",
+  "description": "Quarterly treatment",
+  "amount": 85.00,
+  "frequency": "monthly",
+  "startDate": "2026-11-01",
+  "vendor": "Acme Pest Co"
+}
+```
+
+### Propose response — `200`
+
+Same envelope as the other endpoints.
+
+### Confirm
+
+```json
+{ "confirmationToken": "…" }
+```
+
+Response — `200`:
+
+```json
+{
+  "status": "confirmed",
+  "summary": "…",
+  "recurringExpenseId": "…",
+  "record": { "…": "the created template, including lastGeneratedDate (null until a page load generates its first row)" }
+}
+```
+
+### Reading recurring expenses
+
+`GET /api/alfred/recurring-expenses` lists every template — same shape as the
+confirm response's `record`, including `active` and `lastGeneratedDate`. Check
+this before proposing a new template if the human might already have one for
+the same vendor/purpose.
+
+---
+
 ## Errors
 
 Every failure is a non-2xx status with this body:
@@ -337,8 +450,8 @@ repeated to the human as-is.
 |---|---|---|
 | `401` | `Unauthorized` | Token missing or wrong. Not recoverable in conversation — tell the human the integration is misconfigured |
 | `400` | `invalid_json` | Bug on your side; fix the request |
-| `400` | `missing_machine`, `missing_type`, `missing_description`, `missing_status`, `missing_billing_period_start`, `missing_billing_period_end`, `missing_usage_amount`, `missing_usage_unit`, `missing_cost`, `missing_name`, `missing_file` | Ask the human for the missing detail |
-| `400` | `invalid_date`, `invalid_cost`, `invalid_status`, `invalid_parts`, `invalid_part_quantity`, `invalid_type`, `invalid_billing_period_start`, `invalid_billing_period_end`, `invalid_billing_period`, `invalid_due_date`, `invalid_usage_amount`, `invalid_file` | Re-ask for that one value |
+| `400` | `missing_machine`, `missing_type`, `missing_description`, `missing_status`, `missing_billing_period_start`, `missing_billing_period_end`, `missing_usage_amount`, `missing_usage_unit`, `missing_cost`, `missing_name`, `missing_file`, `missing_date`, `missing_category`, `missing_amount`, `missing_frequency`, `missing_start_date` | Ask the human for the missing detail |
+| `400` | `invalid_date`, `invalid_cost`, `invalid_status`, `invalid_parts`, `invalid_part_quantity`, `invalid_type`, `invalid_billing_period_start`, `invalid_billing_period_end`, `invalid_billing_period`, `invalid_due_date`, `invalid_usage_amount`, `invalid_file`, `invalid_amount`, `invalid_frequency`, `invalid_start_date` | Re-ask for that one value |
 | `413` | `file_too_large` | The file is over the 60 MB limit; it cannot be saved as-is |
 | `400` | `note_required` | Ask why the machine is going out of service, then propose again |
 | `400` | `missing_confirmation_token` | Bug on your side |
@@ -384,14 +497,16 @@ machine is worse than asking one more question.
 
 ## Read endpoints
 
-Still `GET`-only, unchanged: `/api/alfred/kpis`, `/revenue`, `/expenses`,
-`/machines`. `/utilities`, `/maintenance`, and `/documents` are `GET` for
-reading and `POST` for the propose/confirm write above — same URL, the method
-and body decide which. Same `X-Alfred-Token` header throughout. Use the
-`GET`s to check current state before proposing — for example, reading
-`/api/alfred/machines` to find the exact name of the machine the human means,
-or `/api/alfred/utilities` to check whether this month's bill was already
-logged before proposing a duplicate.
+Still `GET`-only, unchanged: `/api/alfred/kpis`, `/revenue`, `/machines`.
+`/utilities`, `/maintenance`, `/documents`, `/expenses`, and
+`/recurring-expenses` are `GET` for reading and `POST` for the
+propose/confirm write above — same URL, the method and body decide which.
+Same `X-Alfred-Token` header throughout. Use the `GET`s to check current
+state before proposing — for example, reading `/api/alfred/machines` to find
+the exact name of the machine the human means, `/api/alfred/utilities` to
+check whether this month's bill was already logged before proposing a
+duplicate, or `/api/alfred/recurring-expenses` to check for an existing
+template before setting up a new one.
 
 `/api/alfred/documents/:id/file` is the one exception to "read endpoints
 return JSON" — it returns the raw file, not a JSON envelope. See

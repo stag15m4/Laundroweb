@@ -10,6 +10,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "backfill:collection-ids": "tsx prisma/backfill-collection-ids.ts",
+    "cleanup:duplicate-recurring-expenses": "tsx prisma/cleanup-duplicate-recurring-expenses.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/ci-smoke-test.mjs"
   },

@@ -32,7 +32,13 @@ export async function generateDueRecurringExpenses(now: Date = new Date()): Prom
           const current = await tx.recurringExpense.findUnique({ where: { id: template.id } });
           if (!current || !current.active) return;
 
-          let due = current.lastGeneratedDate ?? current.startDate;
+          // lastGeneratedDate marks an occurrence that was already created --
+          // starting `due` there (as this used to) re-creates that same
+          // occurrence on every subsequent call, since a past date is always
+          // <= now. The next undelivered occurrence is one step past it.
+          let due = current.lastGeneratedDate
+            ? stepForward(current.lastGeneratedDate, current.frequency)
+            : current.startDate;
           let cursor = current.lastGeneratedDate;
           let count = 0;
 

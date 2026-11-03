@@ -370,6 +370,54 @@ model Expense {
   notes       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Set when this row was auto-generated from a RecurringExpense template
+  // rather than typed in by hand. Still an ordinary Expense row after
+  // that -- editable or deletable like any other -- this is only here so
+  // generation can tell what it's already created, and SetNull rather than
+  // cascading on delete so removing the template never deletes real
+  // expense history.
+  recurringExpenseId String?
+  recurringExpense    RecurringExpense? @relation(fields: [recurringExpenseId], references: [id], onDelete: SetNull)
+
+  @@index([recurringExpenseId])
+}
+
+enum RecurringFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+/// A template for an expense that recurs on a fixed schedule -- rent, pest
+/// control, insurance, subscriptions. This app has no background
+/// scheduler, so generation is lazy: whenever the Expenses or Reports page
+/// loads, GET /api/expenses creates any Expense rows that have come due
+/// since lastGeneratedDate (catching up on more than one if the app went
+/// unvisited for a while) and advances lastGeneratedDate. Pausing
+/// (active=false) or deleting a template never touches Expense rows
+/// already generated -- they're independent history at that point.
+model RecurringExpense {
+  id          String             @id @default(cuid())
+  category    String
+  description String
+  amount      Decimal            @db.Decimal(10, 2)
+  vendor      String?
+  notes       String?
+  frequency   RecurringFrequency @default(MONTHLY)
+  // The first occurrence. Later ones step forward from here by
+  // `frequency`, so moving the day of month/week is just editing this and
+  // letting the next generation pass catch up.
+  startDate   DateTime
+  active      Boolean            @default(true)
+  // Date of the last Expense row actually generated, or null if none yet
+  // -- in which case the next due occurrence is startDate itself.
+  lastGeneratedDate DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  expenses Expense[]
 }
 
 model Incident {

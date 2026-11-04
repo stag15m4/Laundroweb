@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma, UtilityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { alfredError } from "@/lib/alfred-write";
+import { parseAlfredDate } from "@/lib/alfred-dates";
 
 const TYPES = Object.values(UtilityType) as string[];
 
@@ -33,40 +34,6 @@ function money(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-/** True if y-m-d is a real calendar date (rejects e.g. 2026-02-30). */
-function isValidCalendarDate(y: number, m: number, d: number): boolean {
-  if (m < 1 || m > 12 || d < 1) return false;
-  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate(); // "day 0" of next month = last day of this one
-  return d <= daysInMonth;
-}
-
-/**
- * A bare yyyy-MM-dd is read at midday so the calendar date cannot slip a day
- * west of UTC. Calendar components are validated directly rather than
- * trusting Date's rollover behavior, which silently turns e.g. 2026-02-30
- * into March 2 instead of rejecting it -- a human could approve the summary's
- * February date while the stored value is really in March.
- */
-function parseDate(raw: unknown, field: string): { ok: true; date: Date } | { ok: false; response: NextResponse } {
-  const invalid = () =>
-    ({
-      ok: false as const,
-      response: alfredError(400, `invalid_${field}`, `Could not read "${String(raw)}" as a date. Use YYYY-MM-DD.`),
-    });
-
-  if (typeof raw !== "string") return invalid();
-
-  const bare = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-  if (bare) {
-    const [, y, m, d] = bare.map(Number) as unknown as [never, number, number, number];
-    if (!isValidCalendarDate(y, m, d)) return invalid();
-    return { ok: true, date: new Date(Date.UTC(y, m - 1, d, 12)) };
-  }
-
-  if (Number.isNaN(Date.parse(raw))) return invalid();
-  return { ok: true, date: new Date(raw) };
-}
-
 /**
  * Turns a propose body into resolved, writable values — or into the reason it
  * cannot be written. Nothing here touches the real tables.
@@ -95,7 +62,7 @@ export async function validateUtilityBill(body: Record<string, unknown>): Promis
       response: alfredError(400, "missing_billing_period_start", "No billingPeriodStart was supplied. Use YYYY-MM-DD."),
     };
   }
-  const start = parseDate(body.billingPeriodStart, "billing_period_start");
+  const start = parseAlfredDate(body.billingPeriodStart, "billing_period_start");
   if (!start.ok) return start;
 
   if (body.billingPeriodEnd === undefined || body.billingPeriodEnd === null || body.billingPeriodEnd === "") {
@@ -104,7 +71,7 @@ export async function validateUtilityBill(body: Record<string, unknown>): Promis
       response: alfredError(400, "missing_billing_period_end", "No billingPeriodEnd was supplied. Use YYYY-MM-DD."),
     };
   }
-  const end = parseDate(body.billingPeriodEnd, "billing_period_end");
+  const end = parseAlfredDate(body.billingPeriodEnd, "billing_period_end");
   if (!end.ok) return end;
 
   if (end.date < start.date) {
@@ -121,7 +88,7 @@ export async function validateUtilityBill(body: Record<string, unknown>): Promis
   // ── Due date (optional) ────────────────────────────────────────────────
   let dueDate: Date | null = null;
   if (body.dueDate !== undefined && body.dueDate !== null && body.dueDate !== "") {
-    const parsed = parseDate(body.dueDate, "due_date");
+    const parsed = parseAlfredDate(body.dueDate, "due_date");
     if (!parsed.ok) return parsed;
     dueDate = parsed.date;
   }

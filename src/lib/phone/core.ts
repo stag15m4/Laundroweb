@@ -1,3 +1,4 @@
+import { weeklyOnCall } from "./schedule";
 import { validateRequest } from "twilio";
 
 export type PhoneContact = { name: string; number: string };
@@ -74,6 +75,7 @@ export function acknowledges(digits: string | null): boolean {
 }
 
 export type OnCallHours = {
+  weeklySchedule?: unknown;
   onCallHoursEnabled: boolean;
   onCallStart: string;
   onCallEnd: string;
@@ -81,6 +83,7 @@ export type OnCallHours = {
 export const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function isOnCall(config: OnCallHours, now = new Date()): boolean {
   if (!config.onCallHoursEnabled) return true;
+  if (config.weeklySchedule != null) return weeklyOnCall(config.weeklySchedule, now);
   // Fail closed if stored hours are invalid. Equal times are rejected on save.
   if (!timePattern.test(config.onCallStart) || !timePattern.test(config.onCallEnd)
       || config.onCallStart === config.onCallEnd) return false;

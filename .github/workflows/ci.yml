@@ -73,7 +73,7 @@ jobs:
         run: node --import tsx --test tests/protect.test.ts tests/traffic-activity.test.ts
 
       - name: Phone routing and signature tests
-        run: node --import tsx --test tests/phone.test.ts tests/phone-triage.test.ts tests/phone-origin.test.ts
+        run: node --import tsx --test tests/phone.test.ts tests/phone-triage.test.ts tests/phone-origin.test.ts tests/phone-schedule.test.ts
 
       - name: WDF pricing tests
         run: node --import tsx --test tests/wdf-pricing.test.ts

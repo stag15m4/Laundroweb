@@ -1,3 +1,4 @@
+import { parseWeeklySchedule } from "@/lib/phone/schedule";
 import { prisma } from "@/lib/prisma";
 import { denied, phoneUser } from "@/lib/phone/access";
 import { parseContacts, timePattern } from "@/lib/phone/core";
@@ -35,6 +36,7 @@ export async function PUT(request: Request) {
   try {
     const body = await request.json();
     const contacts = parseContacts(body.contacts);
+    const weeklySchedule = body.weeklySchedule == null ? undefined : parseWeeklySchedule(body.weeklySchedule);
     const greetingAudioUrl = typeof body.greetingAudioUrl === "string" && body.greetingAudioUrl.trim() ? body.greetingAudioUrl.trim() : null;
     if (greetingAudioUrl) {
       const audioUrl = new URL(greetingAudioUrl);
@@ -78,6 +80,7 @@ export async function PUT(request: Request) {
         "Configure Twilio, the escalation worker, and at least one contact before enabling the line.",
       );
     const data = {
+      ...(weeklySchedule ? { weeklySchedule } : {}),
       enabled: body.enabled,
       onCallHoursEnabled: body.onCallHoursEnabled,
       onCallStart: body.onCallStart,

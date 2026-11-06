@@ -82,6 +82,7 @@ test("classifier uses the phone OpenAI key and strict structured output", async 
       const body = JSON.parse(String(init?.body));
       assert.equal(body.model, "gpt-6-luna");
       assert.equal(body.store, false);
+      assert.equal(body.reasoning.effort, "low");
       assert.equal(body.text.format.type, "json_schema");
       assert.equal(body.text.format.strict, true);
       return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ level: "ROUTINE", reason: "Isolated vending refund with no safety issue.", englishSummary: "Sprite did not vend." }) }] }] });

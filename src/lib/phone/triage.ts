@@ -49,7 +49,8 @@ export async function classifyPhoneMessage(
         store: false,
         instructions: triageSystem,
         input: JSON.stringify({ voicemail: text }),
-        max_output_tokens: 1000,
+        reasoning: { effort: "low" },
+        max_output_tokens: 2000,
         text: { format: { type: "json_schema", name: "phone_triage", strict: true,
           schema: { type: "object", additionalProperties: false,
             properties: {

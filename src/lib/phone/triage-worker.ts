@@ -26,7 +26,7 @@ export async function processPhoneTriage(
     const claim = await prisma.phoneMessage.updateMany({
       where: { id: message.id, status: "OPEN", triageLevel: "PENDING",
         OR: [{ triageLeaseUntil: null }, { triageLeaseUntil: { lt: now } }] },
-      data: { triageLeaseToken: token, triageLeaseUntil: new Date(Date.now() + 60000) },
+      data: { triageLeaseToken: token, triageLeaseUntil: new Date(Date.now() + 120000) },
     });
     if (!claim.count) continue;
     try {

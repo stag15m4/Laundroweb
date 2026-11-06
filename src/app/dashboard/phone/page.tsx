@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { OutboundDialer } from "@/components/phone/OutboundDialer";
 import { PhoneCallNotes, type CallNote } from "@/components/phone/PhoneCallNotes";
 import { useSession } from "next-auth/react";
 import {
@@ -76,6 +77,7 @@ export default function PhonePage() {
   const { data: session } = useSession();
   const owner =
     (session?.user as { role?: string } | undefined)?.role === "OWNER";
+  const [dialTarget, setDialTarget] = useState<string | null>(null);
   const [tab, setTab] = useState<"inbox" | "settings">("inbox");
   const [filter, setFilter] = useState("active");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -191,7 +193,8 @@ export default function PhonePage() {
             Customer messages and urgent facility alerts.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {owner && <Button variant="outline" onClick={() => setDialTarget("")}><Phone className="mr-2 h-4 w-4" />New call</Button>}
           <Button
             variant={tab === "inbox" ? "default" : "outline"}
             onClick={() => setTab("inbox")}
@@ -210,6 +213,7 @@ export default function PhonePage() {
           )}
         </div>
       </div>
+      {owner && <OutboundDialer destination={dialTarget} onClose={() => setDialTarget(null)} />}
       {error && (
         <div
           role="alert"
@@ -292,16 +296,8 @@ export default function PhonePage() {
                     <div>
                       {message.customerName && <p className="mb-1 font-semibold text-gray-900">{message.customerName}</p>}
                       <CardTitle className="text-base">
-                        {/^\+\d+$/.test(message.caller) ? (
-                          <a
-                            className="hover:underline"
-                            href={`tel:${message.caller}`}
-                          >
-                            {message.caller}
-                          </a>
-                        ) : (
-                          message.caller
-                        )}
+                        {owner ? <span>{message.caller}</span> : /^\+\d+$/.test(message.caller) ? <a className="hover:underline" href={`tel:${message.caller}`}>{message.caller}</a> : message.caller}
+                        {owner && /^\+1[2-9]\d{9}$/.test(message.caller) && <Button size="sm" variant="outline" className="ml-3" onClick={() => setDialTarget(message.caller)}>Call customer</Button>}
                       </CardTitle>
                       <p className="mt-1 text-xs text-gray-500">
                         {date(message.createdAt)}

@@ -992,3 +992,20 @@ model WdfServiceAgreement {
   @@unique([planId, version])
   @@index([planId, createdAt])
 }
+
+/// User-initiated callback bridge; never retried automatically.
+model PhoneOutboundCall {
+  id             String   @id @default(cuid())
+  requestKey     String   @unique
+  userId         String
+  operatorName   String
+  operatorNumber String
+  destination    String
+  callSid        String?  @unique
+  status         String   @default("REQUESTING")
+  error          String?
+  acceptedAt     DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime @default(now())
+  @@index([userId, createdAt])
+}

@@ -115,6 +115,14 @@ async function main() {
   check("phone notifications permit staff", (await fetch(`${BASE}/api/phone/notifications`, { headers: { cookie: staff.cookie } })).status === 200);
   check("phone notifications permit owner", (await fetch(`${BASE}/api/phone/notifications`, { headers: ownerHeaders })).status === 200);
   check("phone settings permit owner", (await fetch(`${BASE}/api/phone/config`, { headers: ownerHeaders })).status === 200);
+  check("outbound dialer rejects anonymous", (await fetch(`${BASE}/api/phone/outbound`)).status === 403);
+  check("outbound dialer rejects staff", (await fetch(`${BASE}/api/phone/outbound`, { headers: { cookie: staff.cookie } })).status === 403);
+  check("outbound dialer permits owner", (await fetch(`${BASE}/api/phone/outbound`, { headers: ownerHeaders })).status === 200);
+  check("staff cannot place outbound calls", (await fetch(`${BASE}/api/phone/outbound`, { method: "POST", headers: { cookie: staff.cookie, Origin: BASE, "Content-Type": "application/json" }, body: "{}" })).status === 403);
+  check("outbound calls require same origin", (await fetch(`${BASE}/api/phone/outbound`, { method: "POST", headers: { ...ownerHeaders, Origin: "https://other.example" }, body: "{}" })).status === 403);
+  check("outbound cancellation requires same origin", (await fetch(`${BASE}/api/phone/outbound`, { method: "PATCH", headers: { ...ownerHeaders, Origin: "https://other.example" }, body: "{}" })).status === 403);
+  check("unsigned outbound callbacks rejected", (await fetch(`${BASE}/api/phone/outbound/webhook/prompt?call=unknown`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "Digits=1" })).status === 403);
+
   check("unsigned telephone callbacks rejected", (await fetch(`${BASE}/api/phone/webhooks/incoming`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "Digits=9" })).status === 403);
 
   const forbidden = await fetch(`${BASE}/api/compliance`, { headers: { cookie: staff.cookie } });

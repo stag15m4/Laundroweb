@@ -218,3 +218,14 @@ Saving notes marks that message read for the author only. It does not acknowledg
 an alert, stop its calls or reopen a resolved message. Use the existing acknowledge
 and resolve actions separately. These details stay inside the authorized phone
 inbox and are not spoken in outbound alerts or sent to AI.
+
+
+## Outbound customer calls
+
+Owners can use New call or Call customer in Phone inbox. Select a callback phone from saved on-call contacts, enter a US/Canada-format customer number, and tap Call my phone, then connect. Twilio calls that contact from the business number; only pressing 1 within the prompt connects the customer. Personal voicemail or no keypress cannot call the customer. Customer caller ID is explicitly the configured Twilio business number. Native staff telephone links still use their own dialer; outbound CLW calling is owner-only.
+
+Manual callbacks ignore on-call hours but require the phone line enabled. Both call legs consume normal Twilio minutes and destination geographic permissions still apply. The dialer does not record conversations. A bridge is limited to 30 minutes. Recent outbound history and cancel controls are in the dialer, independent of voicemail acknowledgment or resolution. No automatic retry or change to message read state occurs.
+
+PhoneOutboundCall is additive and stores who requested a call, both numbers, provider SID, status and times. Client request keys and serializable reservation prevent duplicate retries, concurrent active calls and rapid repeated calls. A provider timeout is shown as delivery uncertain and blocks a second call until cancellation or final callback; never retry an ambiguous provider POST automatically. Signed callbacks bind both numbers and the provider call ID, expire unconfirmed requests after two minutes, and atomically consume the operator's consent. Cancellation prevents new customer dialing; if provider disconnection is uncertain, hang up the callback phone. Phone APIs require owner authentication and same-origin mutations; no caller IDs or callback URLs come from client input. Existing start process applies the additive schema.
+
+After deployment, live verification: call a separate test phone from the dialer, answer the callback on the owner's iPhone, press 1, and confirm the destination displays the CLW number with two-way audio. No live customer calls are placed during automated tests.

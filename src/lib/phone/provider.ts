@@ -67,7 +67,7 @@ function safeProviderDetail(value: unknown): string {
     if (secret) text = text.split(secret).join("[redacted]");
   return text.replace(/\+?\d[\d() -]{7,}\d/g, "[phone number]").slice(0, 500);
 }
-export async function placeAlertCall(to: string, attemptId: string) {
+export async function placeProviderCall(fields: Record<string, string>) {
   const response = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Calls.json`,
     {
@@ -77,18 +77,7 @@ export async function placeAlertCall(to: string, attemptId: string) {
         Authorization: providerAuth(),
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        To: to,
-        From: process.env.TWILIO_PHONE_NUMBER!,
-        Url: phoneUrl(`/api/phone/webhooks/alert?attempt=${attemptId}`),
-        Method: "POST",
-        StatusCallback: phoneUrl(
-          `/api/phone/webhooks/status?attempt=${attemptId}`,
-        ),
-        StatusCallbackMethod: "POST",
-        Timeout: "25",
-        TimeLimit: "90",
-      }),
+      body: new URLSearchParams(fields),
     },
   );
   if (!response.ok) {
@@ -100,4 +89,13 @@ export async function placeAlertCall(to: string, attemptId: string) {
   if (typeof result.sid !== "string" || !/^CA[0-9a-fA-F]{32}$/.test(result.sid))
     throw new Error("Telephone provider returned an invalid call identifier.");
   return result.sid as string;
+}
+
+export function placeAlertCall(to: string, attemptId: string) {
+  return placeProviderCall({
+    To: to, From: process.env.TWILIO_PHONE_NUMBER!,
+    Url: phoneUrl(`/api/phone/webhooks/alert?attempt=${attemptId}`), Method: "POST",
+    StatusCallback: phoneUrl(`/api/phone/webhooks/status?attempt=${attemptId}`),
+    StatusCallbackMethod: "POST", Timeout: "25", TimeLimit: "90",
+  });
 }

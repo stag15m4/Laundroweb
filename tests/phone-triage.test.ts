@@ -68,3 +68,46 @@ test("audio transcription fetches only authenticated Twilio media and preserves 
     await assert.rejects(() => transcribePhoneRecording("https://attacker.example/recording"), /identifier/);
   } finally { globalThis.fetch = savedFetch; process.env = savedEnv; }
 });
+
+test("classifier uses the phone OpenAI key and strict structured output", async () => {
+  const savedEnv = { ...process.env };
+  const savedFetch = globalThis.fetch;
+  try {
+    process.env.OPENAI_API_KEY = "fixture-phone-key";
+    process.env.ANTHROPIC_API_KEY = "unrelated-manuals-key";
+    delete process.env.PHONE_TRIAGE_MODEL;
+    globalThis.fetch = async (input, init) => {
+      assert.equal(String(input), "https://api.openai.com/v1/responses");
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer fixture-phone-key");
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.model, "gpt-6-luna");
+      assert.equal(body.store, false);
+      assert.equal(body.reasoning.effort, "low");
+      assert.equal(body.text.format.type, "json_schema");
+      assert.equal(body.text.format.strict, true);
+      return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ level: "ROUTINE", reason: "Isolated vending refund with no safety issue.", englishSummary: "Sprite did not vend." }) }] }] });
+    };
+    const result = await classifyPhoneMessage("This is a test. The vending machine didn't dispense my Sprite. There is no safety issue.");
+    assert.equal(result.level, "ROUTINE");
+    assert.equal(result.source, "AI");
+  } finally { process.env = savedEnv; globalThis.fetch = savedFetch; }
+});
+test("classifier failures report safe status metadata, never a provider's secret-bearing body", async () => {
+  const savedEnv = { ...process.env };
+  const savedFetch = globalThis.fetch;
+  try {
+    process.env.OPENAI_API_KEY = "fixture-phone-key";
+    for (const [status, code] of [[401, "invalid_api_key"], [403, "permission_denied"], [429, "insufficient_quota"], [404, "model_not_found"]] as const) {
+      globalThis.fetch = async () => Response.json({ error: { code, message: "secret-marker-must-not-appear" } }, { status });
+      const result = await classifyPhoneMessage("Vending machine refund request");
+      assert.equal(result.level, "REVIEW");
+      assert.match(result.reason, new RegExp(`HTTP ${status}`));
+      assert.ok(result.reason.includes(code));
+      assert.ok(!result.reason.includes("secret-marker"));
+    }
+    globalThis.fetch = async () => Response.json({ status: "incomplete", output: [] });
+    assert.match((await classifyPhoneMessage("Vending machine refund")).reason, /did not complete/);
+    globalThis.fetch = async () => Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "refusal", refusal: "No" }] }] });
+    assert.equal((await classifyPhoneMessage("Vending machine refund")).level, "REVIEW");
+  } finally { process.env = savedEnv; globalThis.fetch = savedFetch; }
+});

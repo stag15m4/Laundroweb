@@ -1,4 +1,4 @@
-import { anthropic, anthropicConfigured, MANUALS_MODEL } from "../anthropic";
+class TriageError extends Error {}
 
 export type TriageLevel = "ROUTINE" | "URGENT" | "CRITICAL" | "REVIEW";
 export type Triage = { englishSummary?: string; level: TriageLevel; reason: string; source: "KEYWORD" | "AI" | "FALLBACK" };
@@ -39,16 +39,47 @@ export async function classifyPhoneMessage(
   try {
     if (!text) throw new Error("No transcript.");
     if (analyze) return parseTriage(await analyze(text));
-    if (!anthropicConfigured()) throw new Error("AI not configured.");
-    const response = await anthropic().messages.create({
-      model: process.env.PHONE_TRIAGE_MODEL || MANUALS_MODEL,
-      max_tokens: 250,
-      system: triageSystem,
-      messages: [{ role: "user", content: JSON.stringify({ voicemail: text }) }],
-    }, { timeout: 15000, maxRetries: 0 });
-    return parseTriage(response.content.filter(p => p.type === "text").map(p => p.text).join(""));
-  } catch {
-    return { level: "REVIEW", reason: "Automatic analysis unavailable or uncertain. Human review required; on-call hours do not suppress this alert.", source: "FALLBACK" };
+    if (!process.env.OPENAI_API_KEY) throw new TriageError("OPENAI_API_KEY is missing.");
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      signal: AbortSignal.timeout(20000),
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env.PHONE_TRIAGE_MODEL || "gpt-6-luna",
+        store: false,
+        instructions: triageSystem,
+        input: JSON.stringify({ voicemail: text }),
+        reasoning: { effort: "low" },
+        max_output_tokens: 2000,
+        text: { format: { type: "json_schema", name: "phone_triage", strict: true,
+          schema: { type: "object", additionalProperties: false,
+            properties: {
+              level: { type: "string", enum: ["ROUTINE", "URGENT", "CRITICAL", "REVIEW"] },
+              reason: { type: "string" }, englishSummary: { type: "string" },
+            }, required: ["level", "reason", "englishSummary"],
+          },
+        } },
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      const code = typeof error?.error?.code === "string" && /^[a-zA-Z0-9_]{1,80}$/.test(error.error.code) ? ` (${error.error.code})` : "";
+      throw new TriageError(`OpenAI message analysis returned HTTP ${response.status}${code}.`);
+    }
+    const result = await response.json();
+    if (result.status !== "completed" || !Array.isArray(result.output))
+      throw new TriageError("OpenAI message analysis did not complete.");
+    const outputs: string[] = result.output.flatMap((item: { type?: string; content?: { type?: string; text?: string }[] }) =>
+      item.type === "message" && Array.isArray(item.content) ? item.content.filter(part => part.type === "output_text" && typeof part.text === "string").map(part => part.text!) : []);
+    if (outputs.length !== 1) throw new TriageError("OpenAI returned an unexpected analysis format.");
+    return parseTriage(outputs[0]);
+  } catch (error) {
+    const detail = error instanceof TriageError ? error.message :
+      error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "Message analysis timed out." :
+      error instanceof SyntaxError ? "Message analysis returned invalid JSON." : "Message analysis returned an invalid result or could not connect.";
+    // Only controlled metadata is logged; never provider bodies, keys or caller text.
+    console.error("Phone message analysis failed:", detail);
+    return { level: "REVIEW", reason: `${detail} Human review required; on-call hours do not suppress this alert.`, source: "FALLBACK" };
   }
 }
 export function bypassOnCallHours(level: string): boolean {

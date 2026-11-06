@@ -1,4 +1,5 @@
 "use client";
+import { weekdays, legacyWeek, type OnCallDay } from "@/lib/phone/schedule";
 import { useCallback, useEffect, useState } from "react";
 import { OutboundDialer } from "@/components/phone/OutboundDialer";
 import { PhoneCallNotes, type CallNote } from "@/components/phone/PhoneCallNotes";
@@ -18,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 type Contact = { name: string; number: string };
 type Config = {
+  weeklySchedule?: OnCallDay[] | null;
   enabled: boolean;
   onCallHoursEnabled: boolean;
   onCallStart: string;
@@ -619,17 +621,20 @@ export default function PhonePage() {
                 <div className="flex items-center gap-3">
                   <input id="on-call-hours" type="checkbox" checked={config.onCallHoursEnabled}
                     onChange={(e) => setConfig({ ...config, onCallHoursEnabled: e.target.checked })} />
-                  <Label htmlFor="on-call-hours">Limit alert calls to on-call hours</Label>
+                  <Label htmlFor="on-call-hours">Use weekly on-call schedule</Label>
                 </div>
-                <p className="text-sm text-gray-500">Daily, Eastern time (America/New_York), including daylight saving changes. Outside these hours, service alerts wait until the next on-call period. Critical hazards and messages needing human review can still ring through. Routine requests stay in the inbox. Calls already ringing may finish. Uncheck for 24-hour coverage.</p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2"><Label htmlFor="on-call-start">On-call start</Label>
-                    <Input id="on-call-start" type="time" value={config.onCallStart}
-                      onChange={(e) => setConfig({ ...config, onCallStart: e.target.value })} /></div>
-                  <div className="space-y-2"><Label htmlFor="on-call-end">On-call end</Label>
-                    <Input id="on-call-end" type="time" value={config.onCallEnd}
-                      onChange={(e) => setConfig({ ...config, onCallEnd: e.target.value })} /></div>
-                </div>
+                <p className="text-sm text-gray-500">Editable weekly coverage, Eastern time, including daylight saving changes. Switch weekends or any other day off. Service alerts wait for coverage; critical hazards and uncertain messages can still ring at any hour. Routine messages stay in the inbox. Calls already ringing may finish. Uncheck above for 24-hour coverage.</p>
+                {(config.weeklySchedule ?? legacyWeek(config.onCallStart, config.onCallEnd)).map((day, index) => {
+                  const update = (change: Partial<OnCallDay>) => setConfig({ ...config, weeklySchedule: (config.weeklySchedule ?? legacyWeek(config.onCallStart, config.onCallEnd)).map((entry, i) => i === index ? { ...entry, ...change } : entry) });
+                  return <div key={weekdays[index]} className="space-y-2 rounded border p-3">
+                    <div className="flex flex-wrap items-center gap-4"><Label className="w-24" htmlFor={`coverage-${index}`}>{weekdays[index]}</Label>
+                      <label className="flex items-center gap-2 text-sm"><input id={`coverage-${index}`} type="checkbox" checked={day.enabled} disabled={!config.onCallHoursEnabled} onChange={e => update({ enabled: e.target.checked })} />{day.enabled ? "On call" : "Off"}</label>
+                      {day.enabled && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={day.allDay} disabled={!config.onCallHoursEnabled} onChange={e => update({ allDay: e.target.checked })} />All day</label>}
+                    </div>
+                    {day.enabled && !day.allDay && <div className="grid grid-cols-2 gap-3"><div><Label htmlFor={`start-${index}`}>Start</Label><Input id={`start-${index}`} type="time" value={day.start} disabled={!config.onCallHoursEnabled} onChange={e => update({ start: e.target.value })} /></div><div><Label htmlFor={`end-${index}`}>End</Label><Input id={`end-${index}`} type="time" value={day.end} disabled={!config.onCallHoursEnabled} onChange={e => update({ end: e.target.value })} /></div>{day.start > day.end && <p className="col-span-2 text-xs text-gray-500">Ends the following day. Coverage carries past midnight even if the next day is Off.</p>}</div>}
+                  </div>;
+                })}
+                <p className="text-xs text-gray-500">Changes take effect after Save phone settings. Existing daily hours are preserved until you change them.</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">

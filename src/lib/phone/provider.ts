@@ -54,6 +54,19 @@ export function providerAuth() {
     ).toString("base64")
   );
 }
+export class TwilioCallError extends Error {
+  constructor(public readonly status: number, public readonly code: number | null, detail: string) {
+    super(`Twilio alert request failed: HTTP ${status}${code === null ? "" : `, code ${code}`}${detail ? `. ${detail}` : "."}`);
+  }
+  get definitelyRejected() { return this.status >= 400 && this.status < 500 && this.status !== 408; }
+}
+function safeProviderDetail(value: unknown): string {
+  if (typeof value !== "string") return "";
+  let text = value.slice(0, 1000);
+  for (const secret of [process.env.TWILIO_AUTH_TOKEN, providerAuth()])
+    if (secret) text = text.split(secret).join("[redacted]");
+  return text.replace(/\+?\d[\d() -]{7,}\d/g, "[phone number]").slice(0, 500);
+}
 export async function placeAlertCall(to: string, attemptId: string) {
   const response = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Calls.json`,
@@ -78,8 +91,11 @@ export async function placeAlertCall(to: string, attemptId: string) {
       }),
     },
   );
-  if (!response.ok)
-    throw new Error(`Telephone provider returned HTTP ${response.status}.`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    const code = Number.isInteger(error?.code) ? error.code as number : null;
+    throw new TwilioCallError(response.status, code, safeProviderDetail(error?.message));
+  }
   const result = await response.json();
   if (typeof result.sid !== "string" || !/^CA[0-9a-fA-F]{32}$/.test(result.sid))
     throw new Error("Telephone provider returned an invalid call identifier.");

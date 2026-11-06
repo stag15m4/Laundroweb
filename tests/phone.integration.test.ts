@@ -24,6 +24,7 @@ test(
     const { processPhoneAlerts } = await import("../src/lib/phone/worker");
     let dialCount = 0;
     let shouldFail = false;
+    let shouldReject = false;
     globalThis.fetch = async (input, options) => {
       assert.match(
         String(input),
@@ -32,6 +33,7 @@ test(
       assert.equal(options?.method, "POST");
       dialCount++;
       if (shouldFail) throw new Error("Simulated provider timeout");
+      if (shouldReject) return Response.json({ code: 21219, message: "The To number is unverified." }, { status: 400 });
       return Response.json({
         sid: "CA" + dialCount.toString(16).padStart(32, "0"),
       });
@@ -350,6 +352,23 @@ test(
           delete process.env.OPENAI_API_KEY;
           await prisma.phoneMessage.deleteMany({ where: { OR: [ { callSid: testSid }, { callSid: { in: Array.from({ length: 11 }, (_, i) => "CA" + (100 + i).toString(16).padStart(32, "0")) } } ] } });
           await prisma.phoneConfig.update({ where: { id: "main" }, data: { onCallHoursEnabled: false } });
+        }
+      });
+      await t.test("a definite provider rejection records its cause rather than uncertain delivery", async () => {
+        const sid = "CA" + "9".repeat(32);
+        const rejected = await prisma.phoneMessage.create({ data: {
+          callSid: sid, caller, urgent: true, triageLevel: "CRITICAL", nextAttemptAt: new Date(0),
+        } });
+        try {
+          shouldReject = true;
+          await processPhoneAlerts(false);
+          const attempt = await prisma.phoneAttempt.findFirstOrThrow({ where: { messageId: rejected.id } });
+          assert.equal(attempt.status, "REJECTED");
+          assert.match(attempt.error || "", /21219/);
+          assert.match(attempt.error || "", /unverified/);
+        } finally {
+          shouldReject = false;
+          await prisma.phoneMessage.delete({ where: { id: rejected.id } });
         }
       });
       await t.test(

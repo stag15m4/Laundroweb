@@ -179,3 +179,9 @@ included. Worker leases and conditional updates prevent duplicate analysis and
 never reopen an acknowledged/resolved message. Alert dialing runs independently
 of slow analysis, and deferred service-message backlogs cannot hide a critical
 alert outside on-call hours.
+
+Outbound call rejections retain Twilio's HTTP status, numeric error code, and a
+redacted provider explanation in alert history. Explicit 4xx rejections (except
+408) show REJECTED; transport timeouts and ambiguous server failures remain
+DELIVERY_UNCERTAIN. Both consume an attempt and retain the bounded retry interval.
+Runtime logs include only status/code, never contact numbers or credentials.

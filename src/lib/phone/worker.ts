@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { escalationTarget, parseContacts, isOnCall } from "./core";
 import { processPhoneTriage } from "./triage-worker";
 import { bypassOnCallHours, classifyPhoneMessage } from "./triage";
-import { placeAlertCall, providerReady } from "./provider";
+import { placeAlertCall, providerReady, TwilioCallError } from "./provider";
 
 // Database leases survive deployments and prevent multiple app processes from
 // placing the same scheduled attempt. Every attempt is committed before dialing.
@@ -91,12 +91,14 @@ export async function processPhoneAlerts(runTriage = true) {
           data: { callSid },
         });
       } catch (error) {
+        if (error instanceof TwilioCallError)
+          console.warn("Phone alert request failed:", JSON.stringify({ httpStatus: error.status, twilioCode: error.code }));
         // A network timeout may mean Twilio accepted the call. Do not immediately
         // retry this attempt: the next bounded attempt waits the full interval.
         await prisma.phoneAttempt.update({
           where: { id: attempt.id },
           data: {
-            status: "DELIVERY_UNCERTAIN",
+            status: error instanceof TwilioCallError && error.definitelyRejected ? "REJECTED" : "DELIVERY_UNCERTAIN",
             error:
               error instanceof Error
                 ? error.message

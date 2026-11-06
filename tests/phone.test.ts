@@ -8,7 +8,7 @@ import {
   validSignature,
   xml,
 } from "../src/lib/phone/core";
-import { authenticateWebhook } from "../src/lib/phone/provider";
+import { authenticateWebhook, placeAlertCall, TwilioCallError } from "../src/lib/phone/provider";
 import { getExpectedTwilioSignature } from "twilio";
 
 test("Twilio signature binds the public URL, callback query, and all form fields", () => {
@@ -145,4 +145,32 @@ test("overnight on-call coverage crosses midnight", () => {
     ["2026-11-07T02:59Z", false], ["2026-11-07T03:00Z", true],
     ["2026-11-07T05:00Z", true], ["2026-11-07T10:59Z", true], ["2026-11-07T11:00Z", false],
   ] as const) assert.equal(isOnCall(config, new Date(time)), expected, time);
+});
+
+test("Twilio call rejections preserve the specific cause without exposing secrets", async () => {
+  const savedEnv = { ...process.env };
+  const savedFetch = globalThis.fetch;
+  try {
+    process.env.TWILIO_ACCOUNT_SID = "AC" + "a".repeat(32);
+    process.env.TWILIO_AUTH_TOKEN = "fixture-secret-do-not-print";
+    process.env.TWILIO_PHONE_NUMBER = "+19195551234";
+    process.env.PHONE_PUBLIC_URL = "https://phone.example.com";
+    globalThis.fetch = async () => Response.json({ code: 21219,
+      message: "The To number +19195551235 is unverified. fixture-secret-do-not-print" }, { status: 400 });
+    await assert.rejects(() => placeAlertCall("+19195551235", "fixture-attempt"), error => {
+      assert.ok(error instanceof TwilioCallError);
+      assert.equal(error.code, 21219);
+      assert.equal(error.definitelyRejected, true);
+      assert.match(error.message, /unverified/);
+      assert.ok(!error.message.includes("fixture-secret-do-not-print"));
+      assert.ok(!error.message.includes("+19195551235"));
+      return true;
+    });
+    globalThis.fetch = async () => new Response("Unavailable", { status: 503 });
+    await assert.rejects(() => placeAlertCall("+19195551235", "fixture-attempt"), error => {
+      assert.ok(error instanceof TwilioCallError);
+      assert.equal(error.definitelyRejected, false);
+      return true;
+    });
+  } finally { globalThis.fetch = savedFetch; process.env = savedEnv; }
 });

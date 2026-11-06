@@ -87,6 +87,7 @@ test(
         where: { id: "main" },
         data: {
           enabled: true,
+          onCallHoursEnabled: false,
           maxAttempts: 2,
           retrySeconds: 120,
           contacts: [
@@ -97,6 +98,13 @@ test(
       });
       await prisma.phoneMessage.deleteMany({
         where: { callSid: { in: [incomingSid, generalSid] } },
+      });
+      await t.test("calls without a valid keypad choice do not create messages", async () => {
+        for (const Digits of ["", "3", "8"]) {
+          const response = await hook("menu", { Digits });
+          assert.match(await response.text(), /<Hangup/);
+        }
+        assert.equal(await prisma.phoneMessage.count({ where: { callSid: incomingSid } }), 0);
       });
       await t.test(
         "forged callbacks are rejected without creating messages",
@@ -141,6 +149,24 @@ test(
       );
       const message = await prisma.phoneMessage.findUniqueOrThrow({
         where: { callSid: incomingSid },
+      });
+      await t.test("off-hours alerts stay pending without dialing or consuming attempts", async () => {
+        const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+        const clock = (h: number) => `${String(h % 24).padStart(2, "0")}:00`;
+        await prisma.phoneConfig.update({ where: { id: "main" }, data: {
+          onCallHoursEnabled: true, onCallStart: clock(hour + 2), onCallEnd: clock(hour + 3),
+        } });
+        await makeDue(message.id);
+        const before = dialCount;
+        await processPhoneAlerts();
+        const pending = await prisma.phoneMessage.findUniqueOrThrow({ where: { id: message.id } });
+        assert.equal(dialCount, before);
+        assert.equal(pending.attemptCount, 0);
+        assert.equal(pending.status, "OPEN");
+        assert.ok(pending.nextAttemptAt);
+        assert.equal(pending.leaseToken, null);
+        assert.match(await (await hook("menu", { Digits: "9" })).text(), /off duty/);
+        await prisma.phoneConfig.update({ where: { id: "main" }, data: { onCallHoursEnabled: false } });
       });
       await t.test(
         "recording and transcription callbacks attach only to their own call",

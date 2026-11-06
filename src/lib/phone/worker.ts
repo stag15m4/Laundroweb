@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { escalationTarget, parseContacts } from "./core";
+import { escalationTarget, parseContacts, isOnCall } from "./core";
 import { placeAlertCall, providerReady } from "./provider";
 
 // Database leases survive deployments and prevent multiple app processes from
@@ -12,7 +12,7 @@ export async function processPhoneAlerts() {
     create: { id: "main", workerLastSeenAt: new Date() },
     update: { workerLastSeenAt: new Date() },
   });
-  if (!config?.enabled) return;
+  if (!config?.enabled || !isOnCall(config)) return;
   const contacts = parseContacts(config.contacts);
   if (!contacts.length) return;
   const now = new Date();
@@ -28,6 +28,7 @@ export async function processPhoneAlerts() {
     orderBy: { nextAttemptAt: "asc" },
   });
   for (const message of due) {
+    if (!isOnCall(config)) break;
     const leaseToken = randomUUID();
     const claim = await prisma.phoneMessage.updateMany({
       where: {

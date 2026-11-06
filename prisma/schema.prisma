@@ -691,6 +691,9 @@ model PhoneConfig {
   contacts     Json     @default("[]")
   retrySeconds Int      @default(120)
   maxAttempts  Int      @default(6)
+  onCallHoursEnabled Boolean @default(true)
+  onCallStart String @default("06:00")
+  onCallEnd String @default("22:00")
   workerLastSeenAt DateTime?
   updatedAt    DateTime @updatedAt
 }

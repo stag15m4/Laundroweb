@@ -72,3 +72,23 @@ export function escalationTarget(
 export function acknowledges(digits: string | null): boolean {
   return digits === "1";
 }
+
+export type OnCallHours = {
+  onCallHoursEnabled: boolean;
+  onCallStart: string;
+  onCallEnd: string;
+};
+export const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+export function isOnCall(config: OnCallHours, now = new Date()): boolean {
+  if (!config.onCallHoursEnabled) return true;
+  // Fail closed if stored hours are invalid. Equal times are rejected on save.
+  if (!timePattern.test(config.onCallStart) || !timePattern.test(config.onCallEnd)
+      || config.onCallStart === config.onCallEnd) return false;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(now);
+  const local = `${parts.find(p => p.type === "hour")!.value}:${parts.find(p => p.type === "minute")!.value}`;
+  return config.onCallStart < config.onCallEnd
+    ? local >= config.onCallStart && local < config.onCallEnd
+    : local >= config.onCallStart || local < config.onCallEnd;
+}

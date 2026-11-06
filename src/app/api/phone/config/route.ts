@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { denied, phoneUser } from "@/lib/phone/access";
-import { parseContacts } from "@/lib/phone/core";
+import { parseContacts, timePattern } from "@/lib/phone/core";
 import { providerReady } from "@/lib/phone/provider";
 export const dynamic = "force-dynamic";
 export async function GET() {
@@ -15,6 +15,9 @@ export async function GET() {
       contacts: [],
       retrySeconds: 120,
       maxAttempts: 6,
+      onCallHoursEnabled: true,
+      onCallStart: "06:00",
+      onCallEnd: "22:00",
     },
     workerHealthy:
       !!config?.workerLastSeenAt &&
@@ -29,6 +32,11 @@ export async function PUT(request: Request) {
   try {
     const body = await request.json();
     const contacts = parseContacts(body.contacts);
+    if (typeof body.onCallHoursEnabled !== "boolean" ||
+        typeof body.onCallStart !== "string" || !timePattern.test(body.onCallStart) ||
+        typeof body.onCallEnd !== "string" || !timePattern.test(body.onCallEnd) ||
+        body.onCallStart === body.onCallEnd)
+      throw new Error("Choose different start and end times for on-call hours.");
     if (
       typeof body.enabled !== "boolean" ||
       typeof body.greeting !== "string" ||
@@ -62,6 +70,9 @@ export async function PUT(request: Request) {
       );
     const data = {
       enabled: body.enabled,
+      onCallHoursEnabled: body.onCallHoursEnabled,
+      onCallStart: body.onCallStart,
+      onCallEnd: body.onCallEnd,
       greeting: body.greeting.trim(),
       information: body.information.trim(),
       contacts,

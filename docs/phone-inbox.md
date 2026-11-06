@@ -10,7 +10,7 @@ are stored in source control.
 - 1 plays the owner's hours/location/payment information, then returns to the menu.
 - 2 records a general message (up to 120 seconds).
 - 9 immediately creates a durable urgent alert and records the caller's message.
-- No selection or an invalid selection goes to the general mailbox.
+- No selection or an invalid selection ends the call without recording a message.
 - Urgent alerts start after 60 seconds, including when the caller hangs up without
   recording. The first alert may arrive before a long recording/transcript is ready.
 - Prompts tell callers to call 911 for immediate threats to life or safety.
@@ -127,3 +127,15 @@ recordings remain available independently. Voicemail recording/transcription and
 incoming/outgoing minutes incur provider charges. Recordings remain in Twilio and
 message metadata/transcripts remain in the app database; no automated retention purge
 is included. Define retention before expanding access or storing sensitive messages.
+
+## On-call hours
+
+Setup includes editable daily on-call start/end times in America/New_York.
+Hours default to 06:00–22:00, with daylight saving changes handled automatically.
+The start is inclusive; the end is exclusive. Overnight ranges are supported;
+equal start/end is rejected. Uncheck the limit for 24-hour alerts.
+Outside coverage, the menu and voicemail remain available, urgent callers hear
+an off-duty notice, and pending alerts wait without consuming attempts until
+coverage resumes. An already placed call may finish after closing time.
+The provider-side outage fallback is independent of these app hours; configure
+its own hours if it must also remain quiet outside coverage.

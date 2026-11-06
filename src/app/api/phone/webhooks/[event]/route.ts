@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateWebhook, phoneUrl } from "@/lib/phone/provider";
 import {
   acknowledges,
+  isOnCall,
   phonePattern,
   recordingPattern,
   sidPattern,
@@ -216,7 +217,9 @@ export async function POST(
       say(config.information) +
         `<Redirect method="POST">${endpoint("incoming")}</Redirect>`,
     );
-  // Timeout/invalid input safely lands in the general mailbox without a loop.
+  // A keypad selection is required: automated calls cannot fill the inbox.
+  if (digit !== "2" && digit !== "9")
+    return twiml(say("No valid selection received. Please call again and choose a menu option.") + "<Hangup/>");
   const urgent = digit === "9";
   const message = await prisma.phoneMessage.upsert({
     where: { callSid },
@@ -233,7 +236,9 @@ export async function POST(
   if (message.status !== "OPEN" || message.recordingSid) return end();
   return twiml(
     say(
-      message.urgent
+      message.urgent && !isOnCall(config)
+        ? "Our on-call team is currently off duty. Your urgent request has been saved for the next on-call period. After the tone, leave your name, callback number, and a description. For an immediate threat to life or safety, hang up and call 9 1 1."
+        : message.urgent
         ? "Your urgent request has been logged and will alert the on-call contact. After the tone, leave your name, callback number, and a brief description. If this is a life safety emergency, hang up and call 9 1 1."
         : "After the tone, leave your name, callback number, machine number if relevant, and a description of the problem or refund request.",
     ) +

@@ -17,6 +17,9 @@ import { Textarea } from "@/components/ui/textarea";
 type Contact = { name: string; number: string };
 type Config = {
   enabled: boolean;
+  onCallHoursEnabled: boolean;
+  onCallStart: string;
+  onCallEnd: string;
   greeting: string;
   information: string;
   contacts: Contact[];
@@ -348,7 +351,7 @@ export default function PhonePage() {
                     >
                       {message.escalationEnded
                         ? "Retry limit reached. This alert is still unacknowledged and needs attention."
-                        : `Awaiting acknowledgment. ${message.attemptCount} alert call(s) attempted.${message.nextAttemptAt ? ` Next attempt due ${date(message.nextAttemptAt)} while the line is enabled.` : ""}`}
+                        : `Awaiting acknowledgment. ${message.attemptCount} alert call(s) attempted.${message.nextAttemptAt ? ` Next attempt due ${date(message.nextAttemptAt)} during on-call hours while the line is enabled.` : ""}`}
                     </p>
                   )}
                   {message.acknowledgedAt && (
@@ -582,6 +585,22 @@ export default function PhonePage() {
                   Add contact
                 </Button>
               )}
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="flex items-center gap-3">
+                  <input id="on-call-hours" type="checkbox" checked={config.onCallHoursEnabled}
+                    onChange={(e) => setConfig({ ...config, onCallHoursEnabled: e.target.checked })} />
+                  <Label htmlFor="on-call-hours">Limit alert calls to on-call hours</Label>
+                </div>
+                <p className="text-sm text-gray-500">Daily, Eastern time (America/New_York), including daylight saving changes. Outside these hours, messages are saved and alert calls wait until the next on-call period. Calls already ringing may finish. Uncheck for 24-hour coverage.</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2"><Label htmlFor="on-call-start">On-call start</Label>
+                    <Input id="on-call-start" type="time" value={config.onCallStart}
+                      onChange={(e) => setConfig({ ...config, onCallStart: e.target.value })} /></div>
+                  <div className="space-y-2"><Label htmlFor="on-call-end">On-call end</Label>
+                    <Input id="on-call-end" type="time" value={config.onCallEnd}
+                      onChange={(e) => setConfig({ ...config, onCallEnd: e.target.value })} /></div>
+                </div>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="retry">

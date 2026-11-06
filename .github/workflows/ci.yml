@@ -70,7 +70,7 @@ jobs:
         run: node --import tsx --test tests/compliance*.test.ts
 
       - name: Protect receiver tests
-        run: node --import tsx --test tests/protect.test.ts
+        run: node --import tsx --test tests/protect.test.ts tests/traffic-activity.test.ts
 
       - name: Phone routing and signature tests
         run: node --import tsx --test tests/phone.test.ts tests/phone-triage.test.ts

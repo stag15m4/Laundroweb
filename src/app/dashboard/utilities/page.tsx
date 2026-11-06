@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { UTILITY_UNITS } from "@/lib/utility-units";
 import { Plus, Zap, Droplets, Flame, Trash2, Pencil } from "lucide-react";
 import { format, addMonths } from "date-fns";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -27,13 +28,6 @@ type UtilityBill = {
   provider: string | null;
   accountNumber: string | null;
   notes: string | null;
-};
-
-const utilityUnits: Record<string, string[]> = {
-  ELECTRIC: ["kWh"],
-  WATER: ["gal", "CCF", "HCF"],
-  GAS: ["CCF", "MCF", "Therm"],
-  SEWER: ["gal", "CCF"],
 };
 
 const typeIcons: Record<string, React.ElementType> = {
@@ -91,7 +85,7 @@ function carryForward(type: string, bills: UtilityBill[]) {
     )[0];
 
   if (!previous) {
-    return { ...emptyForm, type, usageUnit: utilityUnits[type]?.[0] ?? "kWh" };
+    return { ...emptyForm, type, usageUnit: UTILITY_UNITS[type]?.[0] ?? "kWh" };
   }
 
   return {
@@ -240,7 +234,7 @@ export default function UtilitiesPage() {
                 onValueChange={(v) =>
                   setForm((f) =>
                     editing
-                      ? { ...f, type: v, usageUnit: utilityUnits[v]?.[0] ?? f.usageUnit }
+                      ? { ...f, type: v, usageUnit: UTILITY_UNITS[v]?.[0] ?? f.usageUnit }
                       : { ...carryForward(v, bills), notes: f.notes }
                   )
                 }
@@ -275,7 +269,7 @@ export default function UtilitiesPage() {
               <Select value={form.usageUnit} onValueChange={(v) => setForm((f) => ({ ...f, usageUnit: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {(utilityUnits[form.type] ?? ["kWh"]).map((u) => (
+                  {(UTILITY_UNITS[form.type] ?? ["kWh"]).map((u) => (
                     <SelectItem key={u} value={u}>{u}</SelectItem>
                   ))}
                 </SelectContent>

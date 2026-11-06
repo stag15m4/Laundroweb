@@ -3,6 +3,7 @@ import { Prisma, UtilityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { alfredError } from "@/lib/alfred-write";
 import { parseAlfredDate } from "@/lib/alfred-dates";
+import { UTILITY_UNITS, normalizeUsageUnit } from "@/lib/utility-units";
 
 const TYPES = Object.values(UtilityType) as string[];
 
@@ -113,11 +114,27 @@ export async function validateUtilityBill(body: Record<string, unknown>): Promis
   }
 
   // ── Usage unit ─────────────────────────────────────────────────────────
-  const usageUnit = typeof body.usageUnit === "string" ? body.usageUnit.trim() : "";
+  // Normalized against this type's exact dashboard vocabulary (not just
+  // checked non-empty) because the Usage Unit dropdown on the Utilities page
+  // matches by exact string -- a free-text value like "therms" (a real gas
+  // bill's own wording) saves fine but then shows no selection there, since
+  // the dropdown's value for gas is "Therm".
+  const rawUsageUnit = typeof body.usageUnit === "string" ? body.usageUnit.trim() : "";
+  if (!rawUsageUnit) {
+    return {
+      ok: false,
+      response: alfredError(400, "missing_usage_unit", `No usageUnit was supplied. Use one of ${UTILITY_UNITS[type].join(", ")}.`),
+    };
+  }
+  const usageUnit = normalizeUsageUnit(type, rawUsageUnit);
   if (!usageUnit) {
     return {
       ok: false,
-      response: alfredError(400, "missing_usage_unit", "No usageUnit was supplied, e.g. kWh, gallons or therms."),
+      response: alfredError(
+        400,
+        "invalid_usage_unit",
+        `"${rawUsageUnit}" is not a usage unit for ${type.toLowerCase()} bills. Use one of ${UTILITY_UNITS[type].join(", ")}.`
+      ),
     };
   }
 

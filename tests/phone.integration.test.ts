@@ -87,6 +87,7 @@ test(
         where: { id: "main" },
         data: {
           enabled: true,
+          onCallHoursEnabled: false,
           maxAttempts: 2,
           retrySeconds: 120,
           contacts: [
@@ -97,6 +98,13 @@ test(
       });
       await prisma.phoneMessage.deleteMany({
         where: { callSid: { in: [incomingSid, generalSid] } },
+      });
+      await t.test("calls without a valid keypad choice do not create messages", async () => {
+        for (const Digits of ["", "3", "8"]) {
+          const response = await hook("menu", { Digits });
+          assert.match(await response.text(), /<Hangup/);
+        }
+        assert.equal(await prisma.phoneMessage.count({ where: { callSid: incomingSid } }), 0);
       });
       await t.test(
         "forged callbacks are rejected without creating messages",
@@ -141,6 +149,25 @@ test(
       );
       const message = await prisma.phoneMessage.findUniqueOrThrow({
         where: { callSid: incomingSid },
+      });
+      await t.test("off-hours alerts stay pending without dialing or consuming attempts", async () => {
+        const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+        const clock = (h: number) => `${String(h % 24).padStart(2, "0")}:00`;
+        await prisma.phoneConfig.update({ where: { id: "main" }, data: {
+          onCallHoursEnabled: true, onCallStart: clock(hour + 2), onCallEnd: clock(hour + 3),
+        } });
+        await prisma.phoneMessage.update({ where: { id: message.id }, data: { triageLevel: "URGENT" } });
+        await dueNow(message.id);
+        const before = dialCount;
+        await processPhoneAlerts();
+        const pending = await prisma.phoneMessage.findUniqueOrThrow({ where: { id: message.id } });
+        assert.equal(dialCount, before);
+        assert.equal(pending.attemptCount, 0);
+        assert.equal(pending.status, "OPEN");
+        assert.ok(pending.nextAttemptAt);
+        assert.equal(pending.leaseToken, null);
+        assert.match(await (await hook("menu", { Digits: "9" })).text(), /reviewed for urgency/);
+        await prisma.phoneConfig.update({ where: { id: "main" }, data: { onCallHoursEnabled: false } });
       });
       await t.test(
         "recording and transcription callbacks attach only to their own call",
@@ -279,6 +306,52 @@ test(
           assert.equal(dialCount, 2);
         },
       );
+      await t.test("triage defers routine messages but critical hazards bypass hours", async () => {
+        const { processPhoneTriage } = await import("../src/lib/phone/triage-worker");
+        const testSid = "CA" + "e".repeat(32);
+        process.env.OPENAI_API_KEY = "fixture-not-a-real-key";
+        try {
+          const sample = await prisma.phoneMessage.create({ data: {
+            callSid: testSid, caller, recordingSid: "RE" + "e".repeat(32), duration: 12,
+          } });
+          await processPhoneTriage(async () => ({ level: "ROUTINE", reason: "Vending refund", source: "AI" }),
+            async () => ({ text: "La máquina no me dio mi refresco.", language: "es" }));
+          let current = await prisma.phoneMessage.findUniqueOrThrow({ where: { id: sample.id } });
+          assert.equal(current.triageLevel, "ROUTINE");
+          assert.equal(current.urgent, false);
+          assert.equal(current.nextAttemptAt, null);
+          assert.equal(current.transcriptLanguage, "es");
+          // Reusing this isolated fixture checks a general-message flood report:
+          // the caller did not need to choose the urgent menu option.
+          await prisma.phoneMessage.update({ where: { id: sample.id }, data: {
+            transcript: "The floor is flooding from a busted hose.", triageLevel: "PENDING",
+          } });
+          await processPhoneTriage();
+          current = await prisma.phoneMessage.findUniqueOrThrow({ where: { id: sample.id } });
+          assert.equal(current.triageLevel, "CRITICAL");
+          assert.equal(current.urgent, true);
+          const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+          const clock = (h: number) => `${String(h % 24).padStart(2, "0")}:00`;
+          await prisma.phoneConfig.update({ where: { id: "main" }, data: {
+            onCallHoursEnabled: true, onCallStart: clock(hour + 2), onCallEnd: clock(hour + 3),
+          } });
+          // A backlog of deferred service messages must not hide critical alerts.
+          for (let i = 0; i < 11; i++) await prisma.phoneMessage.create({ data: {
+            callSid: "CA" + (100 + i).toString(16).padStart(32, "0"), caller,
+            urgent: true, triageLevel: "URGENT", nextAttemptAt: new Date(0),
+          } });
+          const before = dialCount;
+          await processPhoneAlerts(false);
+          assert.equal(dialCount, before + 1);
+          await prisma.phoneMessage.update({ where: { id: sample.id }, data: { status: "RESOLVED", nextAttemptAt: null, triageLevel: "PENDING" } });
+          await processPhoneTriage();
+          assert.equal((await prisma.phoneMessage.findUniqueOrThrow({ where: { id: sample.id } })).status, "RESOLVED");
+        } finally {
+          delete process.env.OPENAI_API_KEY;
+          await prisma.phoneMessage.deleteMany({ where: { OR: [ { callSid: testSid }, { callSid: { in: Array.from({ length: 11 }, (_, i) => "CA" + (100 + i).toString(16).padStart(32, "0")) } } ] } });
+          await prisma.phoneConfig.update({ where: { id: "main" }, data: { onCallHoursEnabled: false } });
+        }
+      });
       await t.test(
         "an alert URL cannot acknowledge a different outbound call",
         async () => {

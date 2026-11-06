@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { denied, phoneUser } from "@/lib/phone/access";
-import { parseContacts } from "@/lib/phone/core";
+import { parseContacts, timePattern } from "@/lib/phone/core";
 import { providerReady } from "@/lib/phone/provider";
 export const dynamic = "force-dynamic";
 export async function GET() {
@@ -10,11 +10,15 @@ export async function GET() {
     config: config ?? {
       enabled: false,
       greeting: "Thank you for calling the laundromat.",
+      greetingAudioUrl: null,
       information:
         "Please leave a general message for hours, location, or payment questions.",
       contacts: [],
       retrySeconds: 120,
       maxAttempts: 6,
+      onCallHoursEnabled: true,
+      onCallStart: "06:00",
+      onCallEnd: "22:00",
     },
     workerHealthy:
       !!config?.workerLastSeenAt &&
@@ -22,6 +26,8 @@ export async function GET() {
     providerReady: providerReady(),
     workerEnabled: process.env.PHONE_WORKER_ENABLED === "true",
     number: process.env.TWILIO_PHONE_NUMBER || null,
+    multilingualReady: !!process.env.OPENAI_API_KEY,
+    triageAiReady: !!process.env.ANTHROPIC_API_KEY,
   });
 }
 export async function PUT(request: Request) {
@@ -29,6 +35,17 @@ export async function PUT(request: Request) {
   try {
     const body = await request.json();
     const contacts = parseContacts(body.contacts);
+    const greetingAudioUrl = typeof body.greetingAudioUrl === "string" && body.greetingAudioUrl.trim() ? body.greetingAudioUrl.trim() : null;
+    if (greetingAudioUrl) {
+      const audioUrl = new URL(greetingAudioUrl);
+      if (audioUrl.protocol !== "https:" || audioUrl.username || audioUrl.password || greetingAudioUrl.length > 2000)
+        throw new Error("Use a public HTTPS URL for the recorded greeting.");
+    }
+    if (typeof body.onCallHoursEnabled !== "boolean" ||
+        typeof body.onCallStart !== "string" || !timePattern.test(body.onCallStart) ||
+        typeof body.onCallEnd !== "string" || !timePattern.test(body.onCallEnd) ||
+        body.onCallStart === body.onCallEnd)
+      throw new Error("Choose different start and end times for on-call hours.");
     if (
       typeof body.enabled !== "boolean" ||
       typeof body.greeting !== "string" ||
@@ -62,7 +79,11 @@ export async function PUT(request: Request) {
       );
     const data = {
       enabled: body.enabled,
+      onCallHoursEnabled: body.onCallHoursEnabled,
+      onCallStart: body.onCallStart,
+      onCallEnd: body.onCallEnd,
       greeting: body.greeting.trim(),
+      greetingAudioUrl,
       information: body.information.trim(),
       contacts,
       retrySeconds: body.retrySeconds,

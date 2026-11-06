@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { escalationTarget, parseContacts } from "./core";
+import { escalationTarget, parseContacts, isOnCall } from "./core";
+import { processPhoneTriage } from "./triage-worker";
+import { bypassOnCallHours } from "./triage";
 import { placeAlertCall, providerReady } from "./provider";
 
 // Database leases survive deployments and prevent multiple app processes from
 // placing the same scheduled attempt. Every attempt is committed before dialing.
-export async function processPhoneAlerts() {
+export async function processPhoneAlerts(runTriage = true) {
   if (process.env.PHONE_WORKER_ENABLED !== "true" || !providerReady()) return;
   const config = await prisma.phoneConfig.upsert({
     where: { id: "main" },
@@ -13,12 +15,14 @@ export async function processPhoneAlerts() {
     update: { workerLastSeenAt: new Date() },
   });
   if (!config?.enabled) return;
+  if (runTriage) await processPhoneTriage();
   const contacts = parseContacts(config.contacts);
   if (!contacts.length) return;
   const now = new Date();
   const due = await prisma.phoneMessage.findMany({
     where: {
       urgent: true,
+      triageLevel: isOnCall(config) ? { not: "PENDING" } : { in: ["CRITICAL", "REVIEW"] },
       status: "OPEN",
       escalationEnded: false,
       nextAttemptAt: { lte: now },
@@ -28,6 +32,7 @@ export async function processPhoneAlerts() {
     orderBy: { nextAttemptAt: "asc" },
   });
   for (const message of due) {
+    if (!isOnCall(config) && !bypassOnCallHours(message.triageLevel)) continue;
     const leaseToken = randomUUID();
     const claim = await prisma.phoneMessage.updateMany({
       where: {
@@ -111,6 +116,8 @@ export async function processPhoneAlerts() {
 const state = globalThis as unknown as {
   phoneWorker?: ReturnType<typeof setInterval>;
   phoneWorkerBusy?: boolean;
+  phoneTriageWorker?: ReturnType<typeof setInterval>;
+  phoneTriageBusy?: boolean;
 };
 export function startPhoneWorker() {
   if (state.phoneWorker || process.env.PHONE_WORKER_ENABLED !== "true") return;
@@ -118,7 +125,7 @@ export function startPhoneWorker() {
     if (state.phoneWorkerBusy) return;
     state.phoneWorkerBusy = true;
     try {
-      await processPhoneAlerts();
+      await processPhoneAlerts(false);
     } catch (error) {
       console.error(
         "Phone escalation worker failed",
@@ -128,6 +135,20 @@ export function startPhoneWorker() {
       state.phoneWorkerBusy = false;
     }
   };
+  // Keep alert delivery independent of slow speech/AI providers.
+  const triageTick = async () => {
+    if (state.phoneTriageBusy || !providerReady()) return;
+    state.phoneTriageBusy = true;
+    try {
+      const config = await prisma.phoneConfig.findUnique({ where: { id: "main" } });
+      if (config?.enabled) await processPhoneTriage();
+    } catch {
+      console.error("Phone message analysis worker failed; pending work will retry.");
+    } finally { state.phoneTriageBusy = false; }
+  };
+  state.phoneTriageWorker = setInterval(triageTick, 5000);
+  state.phoneTriageWorker.unref();
+  void triageTick();
   state.phoneWorker = setInterval(tick, 5000);
   state.phoneWorker.unref();
   void tick();

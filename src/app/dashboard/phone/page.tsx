@@ -17,7 +17,11 @@ import { Textarea } from "@/components/ui/textarea";
 type Contact = { name: string; number: string };
 type Config = {
   enabled: boolean;
+  onCallHoursEnabled: boolean;
+  onCallStart: string;
+  onCallEnd: string;
   greeting: string;
+  greetingAudioUrl: string | null;
   information: string;
   contacts: Contact[];
   retrySeconds: number;
@@ -35,6 +39,12 @@ type Message = {
   id: string;
   caller: string;
   urgent: boolean;
+  triageLevel: string;
+  triageReason: string | null;
+  triageSource: string | null;
+  englishSummary: string | null;
+  transcriptLanguage: string | null;
+  transcriptionError: string | null;
   status: string;
   recordingSid: string | null;
   transcript: string | null;
@@ -74,6 +84,8 @@ export default function PhonePage() {
   const [config, setConfig] = useState<Config | null>(null);
   const [readiness, setReadiness] = useState({
     providerReady: false,
+    multilingualReady: false,
+    triageAiReady: false,
     workerEnabled: false,
     workerHealthy: false,
     number: null as string | null,
@@ -332,6 +344,15 @@ export default function PhonePage() {
                       before leaving a message.
                     </p>
                   )}
+                  <div className="rounded-lg bg-gray-50 p-3 text-sm">
+                    <strong>{message.triageLevel === "PENDING" ? "Awaiting message analysis" : message.triageLevel.toLowerCase()}</strong>
+                    {message.triageSource && <span className="text-xs text-gray-500"> · {message.triageSource.toLowerCase()}</span>}
+                    {message.triageReason && <p className="mt-1">{message.triageReason}</p>}
+                    {(message.triageLevel === "CRITICAL" || message.triageLevel === "REVIEW") && <p className="mt-1 font-medium">Alerts can ring outside on-call hours.</p>}
+                  </div>
+                  {message.englishSummary && <p className="rounded-lg bg-blue-50 p-3 text-sm"><strong>English summary:</strong> {message.englishSummary}</p>}
+                  {message.transcriptLanguage && <p className="text-xs text-gray-500">Detected language: {message.transcriptLanguage}</p>}
+                  {message.transcriptionError && <p className="text-sm text-amber-800">{message.transcriptionError} Listen to the recording.</p>}
                   {message.transcript ? (
                     <p className="whitespace-pre-wrap text-sm leading-relaxed">
                       {message.transcript}
@@ -348,7 +369,7 @@ export default function PhonePage() {
                     >
                       {message.escalationEnded
                         ? "Retry limit reached. This alert is still unacknowledged and needs attention."
-                        : `Awaiting acknowledgment. ${message.attemptCount} alert call(s) attempted.${message.nextAttemptAt ? ` Next attempt due ${date(message.nextAttemptAt)} while the line is enabled.` : ""}`}
+                        : `Awaiting acknowledgment. ${message.attemptCount} alert call(s) attempted.${message.nextAttemptAt ? ` Next attempt due ${date(message.nextAttemptAt)} during on-call hours while the line is enabled.` : ""}`}
                     </p>
                   )}
                   {message.acknowledgedAt && (
@@ -441,6 +462,8 @@ export default function PhonePage() {
                       : "Needs configuration"}
                 </strong>
               </p>
+              <p>Message analysis: <strong>{readiness.triageAiReady ? "AI configured" : "AI needs configuration"}</strong> · Multilingual transcription: <strong>{readiness.multilingualReady ? "Configured; live language tests required" : "Needs OPENAI_API_KEY in Railway"}</strong></p>
+              {!readiness.multilingualReady && <p className="rounded-lg bg-amber-50 p-3 text-amber-900">Messages will require human review and may alert after hours until multilingual transcription is configured. Native English-only transcription cannot reliably triage Spanish or Haitian Creole. Test each language with real callers before relying on automatic deferral.</p>}
               {readiness.number && (
                 <p>
                   Forward your MagicJack line to{" "}
@@ -448,9 +471,7 @@ export default function PhonePage() {
                 </p>
               )}
               <p className="text-gray-500">
-                Calls use this menu: 1 for information, 2 for the general
-                mailbox, 9 for urgent assistance. Urgent calls are logged
-                immediately and begin alerting contacts after one minute.
+                Calls use this menu: 1 for information, 2 to leave a message, 9 for urgent assistance. All messages are analyzed. Routine requests stay in the inbox; service issues alert during on-call hours; critical hazards and uncertain messages can alert at any hour.
               </p>
               <p className="text-gray-500">
                 Turning the line off pauses alert delivery. Existing messages
@@ -489,6 +510,12 @@ export default function PhonePage() {
                     setConfig({ ...config, greeting: e.target.value })
                   }
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="greeting-audio">Recorded multilingual menu URL (optional)</Label>
+                <Input id="greeting-audio" type="url" placeholder="https://…/greeting.mp3" value={config.greetingAudioUrl || ""}
+                  onChange={(e) => setConfig({ ...config, greetingAudioUrl: e.target.value || null })} />
+                <p className="text-sm text-gray-500">Replaces the spoken opening menu. Use a public HTTPS audio recording with English, Spanish and Haitian Creole instructions: 1 for information, 2 to leave a message, 9 for an urgent problem. A fluent speaker should verify the Creole recording before use.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="information">
@@ -582,6 +609,22 @@ export default function PhonePage() {
                   Add contact
                 </Button>
               )}
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="flex items-center gap-3">
+                  <input id="on-call-hours" type="checkbox" checked={config.onCallHoursEnabled}
+                    onChange={(e) => setConfig({ ...config, onCallHoursEnabled: e.target.checked })} />
+                  <Label htmlFor="on-call-hours">Limit alert calls to on-call hours</Label>
+                </div>
+                <p className="text-sm text-gray-500">Daily, Eastern time (America/New_York), including daylight saving changes. Outside these hours, service alerts wait until the next on-call period. Critical hazards and messages needing human review can still ring through. Routine requests stay in the inbox. Calls already ringing may finish. Uncheck for 24-hour coverage.</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2"><Label htmlFor="on-call-start">On-call start</Label>
+                    <Input id="on-call-start" type="time" value={config.onCallStart}
+                      onChange={(e) => setConfig({ ...config, onCallStart: e.target.value })} /></div>
+                  <div className="space-y-2"><Label htmlFor="on-call-end">On-call end</Label>
+                    <Input id="on-call-end" type="time" value={config.onCallEnd}
+                      onChange={(e) => setConfig({ ...config, onCallEnd: e.target.value })} /></div>
+                </div>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="retry">

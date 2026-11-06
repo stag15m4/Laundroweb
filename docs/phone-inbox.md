@@ -9,10 +9,9 @@ are stored in source control.
 
 - 1 plays the owner's hours/location/payment information, then returns to the menu.
 - 2 records a general message (up to 120 seconds).
-- 9 immediately creates a durable urgent alert and records the caller's message.
-- No selection or an invalid selection goes to the general mailbox.
-- Urgent alerts start after 60 seconds, including when the caller hangs up without
-  recording. The first alert may arrive before a long recording/transcript is ready.
+- 9 durably logs an urgent request and records the caller's message. All messages, including option 2, enter message triage.
+- No selection or an invalid selection ends the call without recording a message.
+- After recording/transcription, triage determines whether to alert. If an urgent caller hangs up without recording or analysis is unavailable, human-review escalation starts after a bounded wait (up to three minutes for missing transcription).
 - Prompts tell callers to call 911 for immediate threats to life or safety.
 
 Signed-in OWNER and STAFF users can listen, read transcripts, call back using their
@@ -127,3 +126,53 @@ recordings remain available independently. Voicemail recording/transcription and
 incoming/outgoing minutes incur provider charges. Recordings remain in Twilio and
 message metadata/transcripts remain in the app database; no automated retention purge
 is included. Define retention before expanding access or storing sensitive messages.
+
+## On-call hours
+
+Setup includes editable daily on-call start/end times in America/New_York.
+Hours default to 06:00–22:00, with daylight saving changes handled automatically.
+The start is inclusive; the end is exclusive. Overnight ranges are supported;
+equal start/end is rejected. Uncheck the limit for 24-hour alerts.
+Outside coverage, the menu and voicemail remain available. URGENT service alerts
+wait without consuming attempts until coverage resumes; CRITICAL hazards and
+REVIEW messages bypass quiet hours. An already placed call may finish after closing time.
+The provider-side outage fallback is independent of these app hours; configure
+its own hours if it must also remain quiet outside coverage.
+
+## Smart message triage and languages
+
+Every recorded message is analyzed, including the general mailbox. ROUTINE
+(refunds, isolated vending failures) stays in the inbox without phone alerts.
+URGENT service issues alert during on-call hours. CRITICAL hazards and REVIEW
+(uncertain/unavailable analysis) alert at any hour using the same bounded,
+acknowledged escalation. AI never resolves a message. Obvious current hazard
+phrases in English, Spanish or Haitian Creole promote it without waiting for AI;
+contextual AI handles other wording, negations and mixed issues. Phrase matching
+and AI can make mistakes: live test with real callers before relying on routing.
+
+Set OPENAI_API_KEY in Railway for recorded multilingual speech transcription;
+the default PHONE_TRANSCRIPTION_MODEL is gpt-transcribe. Language is auto-detected,
+original text is preserved and AI provides an English summary. ANTHROPIC_API_KEY
+is used for classification; PHONE_TRIAGE_MODEL optionally overrides the existing
+app model. A missing/rejected speech or classification key, malformed output,
+unclear language, or provider timeout leads to REVIEW rather than suppressing a
+potential emergency. Native Twilio transcription remains a backup source of
+hazard phrases, but English-only native transcription is not enough to clear a
+multilingual message as routine. Haitian Creole recognition quality must be tested
+with fluent speakers; do not represent it as validated from synthetic text tests.
+
+The default menu includes a short Spanish instruction. Setup also accepts a
+public HTTPS recorded multilingual menu URL, replacing all synthesized opening
+menu speech. Record the full English/Spanish/Haitian Creole menu with a fluent
+speaker: 1 information, 2 message, 9 urgent. The app does not pretend an English
+or French TTS voice is Haitian Creole. Until supplied, a Creole greeting is not
+configured. The recording prompt still uses the app's standard English instructions;
+include instructions to leave name/callback/problem in the multilingual recording.
+
+Speech transcription and AI incur usage charges and send message audio/text to
+the configured providers. Callers hear a voicemail prompt and beep. The database
+stores triage result, source, reason and errors; no automatic retention change is
+included. Worker leases and conditional updates prevent duplicate analysis and
+never reopen an acknowledged/resolved message. Alert dialing runs independently
+of slow analysis, and deferred service-message backlogs cannot hide a critical
+alert outside on-call hours.

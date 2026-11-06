@@ -27,12 +27,12 @@ function unavailable() {
         ) + "<Hangup/>",
   );
 }
-function menu(greeting: string) {
+function menu(greeting: string, audioUrl: string | null = null) {
   return twiml(
     `<Gather numDigits="1" timeout="7" action="${endpoint("menu")}" method="POST" actionOnEmptyResult="true">` +
-      say(
-        `${greeting} For hours and information, press 1. To leave a general message or request a refund, press 2. For an urgent facility problem, press 9. For an immediate threat to life or safety, hang up and call 9 1 1.`,
-      ) +
+      (audioUrl ? `<Play>${xml(audioUrl)}</Play>` : say(
+        `${greeting} Hours, press 1. Leave a message, press 2. Urgent problem, press 9. For immediate danger, call 9 1 1.`,
+      ) + '<Say language="es-MX">Para dejar un mensaje, oprima dos.</Say>') +
       "</Gather>",
   );
 }
@@ -147,7 +147,7 @@ export async function POST(
     return twiml(
       `<Gather numDigits="1" timeout="10" action="${endpoint("ack", `?attempt=${attempt.id}`)}" method="POST" actionOnEmptyResult="true">` +
         say(
-          `Urgent laundromat alert. Caller: ${attempt.message.caller}. ${details} Press 1 to acknowledge and stop further alerts.`,
+          `Laundromat alert. ${attempt.message.triageLevel}. ${attempt.message.triageReason || ""} Caller: ${attempt.message.caller}. ${details} Press 1 to acknowledge and stop further alerts.`,
         ) +
         "</Gather>",
     );
@@ -174,11 +174,10 @@ export async function POST(
         form.get("TranscriptionStatus") === "completed" &&
         recordingPattern.test(recordingSid)
       ) {
-        await prisma.phoneMessage.update({
-          where: { id },
-          data: {
-            transcript: (form.get("TranscriptionText") || "").slice(0, 10000),
-          },
+        const transcript = (form.get("TranscriptionText") || "").trim().slice(0, 10000);
+        if (transcript) await prisma.phoneMessage.updateMany({
+          where: { id, transcript: null },
+          data: { transcript },
         });
       }
       return new Response(null, { status: 204 });
@@ -207,7 +206,7 @@ export async function POST(
       { message: "Wrong receiving number." },
       { status: 403 },
     );
-  if (event === "incoming") return menu(config.greeting);
+  if (event === "incoming") return menu(config.greeting, config.greetingAudioUrl);
   if (event !== "menu")
     return Response.json({ message: "Unknown phone event." }, { status: 404 });
   const digit = form.get("Digits");
@@ -216,7 +215,9 @@ export async function POST(
       say(config.information) +
         `<Redirect method="POST">${endpoint("incoming")}</Redirect>`,
     );
-  // Timeout/invalid input safely lands in the general mailbox without a loop.
+  // A keypad selection is required: automated calls cannot fill the inbox.
+  if (digit !== "2" && digit !== "9")
+    return twiml(say("No valid selection received. Please call again and choose a menu option.") + "<Hangup/>");
   const urgent = digit === "9";
   const message = await prisma.phoneMessage.upsert({
     where: { callSid },
@@ -233,9 +234,7 @@ export async function POST(
   if (message.status !== "OPEN" || message.recordingSid) return end();
   return twiml(
     say(
-      message.urgent
-        ? "Your urgent request has been logged and will alert the on-call contact. After the tone, leave your name, callback number, and a brief description. If this is a life safety emergency, hang up and call 9 1 1."
-        : "After the tone, leave your name, callback number, machine number if relevant, and a description of the problem or refund request.",
+      "After the tone, leave your name, callback number, and what happened. Messages are reviewed for urgency. For immediate danger, call 9 1 1.",
     ) +
       `<Record maxLength="120" timeout="5" finishOnKey="#" playBeep="true" action="${endpoint("recorded", `?message=${message.id}`)}" method="POST" recordingStatusCallback="${endpoint("recording", `?message=${message.id}`)}" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed" transcribe="true" transcribeCallback="${endpoint("transcription", `?message=${message.id}`)}"/>` +
       "<Hangup/>",

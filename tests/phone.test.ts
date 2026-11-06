@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   acknowledges,
+  isOnCall,
   escalationTarget,
   parseContacts,
   validSignature,
@@ -124,4 +125,24 @@ test("user-controlled greetings and transcripts cannot inject telephone commands
     xml('<Dial a="x">&\'</Dial>'),
     "&lt;Dial a=&quot;x&quot;&gt;&amp;&apos;&lt;/Dial&gt;",
   );
+});
+
+test("on-call hours use Eastern time with inclusive start and exclusive end", () => {
+  const config = { onCallHoursEnabled: true, onCallStart: "06:00", onCallEnd: "22:00" };
+  for (const [time, expected] of [
+    ["2026-11-06T10:59:00Z", false], ["2026-11-06T11:00:00Z", true],
+    ["2026-11-07T02:59:00Z", true], ["2026-11-07T03:00:00Z", false],
+    ["2026-07-06T09:59:00Z", false], ["2026-07-06T10:00:00Z", true],
+    ["2026-03-08T10:00:00Z", true], ["2026-11-01T11:00:00Z", true],
+  ] as const) assert.equal(isOnCall(config, new Date(time)), expected, time);
+  assert.equal(isOnCall({ ...config, onCallHoursEnabled: false }, new Date("2026-11-06T05:00Z")), true);
+  assert.equal(isOnCall({ ...config, onCallStart: "bad" }), false);
+  assert.equal(isOnCall({ ...config, onCallEnd: "06:00" }), false);
+});
+test("overnight on-call coverage crosses midnight", () => {
+  const config = { onCallHoursEnabled: true, onCallStart: "22:00", onCallEnd: "06:00" };
+  for (const [time, expected] of [
+    ["2026-11-07T02:59Z", false], ["2026-11-07T03:00Z", true],
+    ["2026-11-07T05:00Z", true], ["2026-11-07T10:59Z", true], ["2026-11-07T11:00Z", false],
+  ] as const) assert.equal(isOnCall(config, new Date(time)), expected, time);
 });

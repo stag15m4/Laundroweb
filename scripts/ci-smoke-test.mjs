@@ -111,6 +111,9 @@ async function main() {
   check("phone inbox permits staff", (await fetch(`${BASE}/api/phone/messages`, { headers: { cookie: staff.cookie } })).status === 200);
   check("phone settings reject staff reads", (await fetch(`${BASE}/api/phone/config`, { headers: { cookie: staff.cookie } })).status === 403);
   check("phone settings reject staff writes", (await fetch(`${BASE}/api/phone/config`, { method: "PUT", headers: { cookie: staff.cookie, "Content-Type": "application/json" }, body: "{}" })).status === 403);
+  check("phone notifications reject anonymous access", (await fetch(`${BASE}/api/phone/notifications`)).status === 403);
+  check("phone notifications permit staff", (await fetch(`${BASE}/api/phone/notifications`, { headers: { cookie: staff.cookie } })).status === 200);
+  check("phone notifications permit owner", (await fetch(`${BASE}/api/phone/notifications`, { headers: ownerHeaders })).status === 200);
   check("phone settings permit owner", (await fetch(`${BASE}/api/phone/config`, { headers: ownerHeaders })).status === 200);
   check("unsigned telephone callbacks rejected", (await fetch(`${BASE}/api/phone/webhooks/incoming`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "Digits=9" })).status === 403);
 
@@ -207,6 +210,21 @@ async function main() {
   const traffic = await trafficResponse.json();
   check("owner sees one event after concurrent retries", trafficResponse.status === 200 && traffic.events?.filter(e => e.alarmName === protectAlarm.alarm.name).length === 1);
   check("diagnostics are not cached", trafficResponse.headers.get("cache-control") === "no-store");
+  const activityUrl = `${BASE}/api/cameras/activity`;
+  check("activity rejects anonymous access", (await fetch(activityUrl)).status === 401);
+  check("activity rejects staff access", (await fetch(activityUrl, { headers: { cookie: staff.cookie } })).status === 403);
+  check("receiver token cannot read activity", (await fetch(activityUrl, { headers: protectHeaders })).status === 401);
+  const busyAlarmName = "CI entrance busy meter";
+  const busyTimestamp = Date.now();
+  const busyDeliveries = await Promise.all(Array.from({ length: 25 }, (_, index) => postAlarm({ alarm: { name: busyAlarmName }, timestamp: busyTimestamp - index })));
+  check("busy meter fixtures accepted", busyDeliveries.every(r => r.status === 200));
+  const activityResponse = await fetch(activityUrl, { headers: { cookie: right.cookie } });
+  const activity = await activityResponse.json();
+  check("owner sees deduplicated entrance activity", activityResponse.status === 200 && activity.alarms?.find(a => a.name === protectAlarm.alarm.name)?.level === "Slow");
+  check("activity aggregates beyond diagnostic page limit and separates alarms", activity.alarms?.find(a => a.name === busyAlarmName)?.level === "Busy" && activity.alarms?.find(a => a.name === protectAlarm.alarm.name)?.level === "Slow");
+  check("activity is not cached", activityResponse.headers.get("cache-control") === "no-store");
+  check("activity exposes no counts, payloads or secrets", !JSON.stringify(activity).includes(process.env.PROTECT_WEBHOOK_TOKEN) && activity.alarms?.every(a => !("payload" in a) && !("count" in a)));
+
   check("diagnostics do not return the secret", !JSON.stringify(traffic).includes(process.env.PROTECT_WEBHOOK_TOKEN));
 
   await wdfSmoke({ base: BASE, ownerHeaders, staffHeaders: { cookie: staff.cookie, "Content-Type": "application/json", Origin: BASE }, check });

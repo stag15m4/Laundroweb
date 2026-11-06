@@ -73,6 +73,8 @@ model User {
   incidents Incident[]
   devices   TrustedDevice[]
   documents Document[]
+  phoneMessageReads PhoneMessageRead[]
+  phoneMessageNotes PhoneMessageNote[]
 }
 
 /// A browser that has completed a full password login and been enrolled for
@@ -703,6 +705,7 @@ model PhoneMessage {
   id              String    @id @default(cuid())
   callSid         String    @unique
   caller          String
+  customerName    String?
   urgent          Boolean   @default(false)
   recordingSid    String?   @unique
   duration        Int?
@@ -730,8 +733,34 @@ model PhoneMessage {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   attempts        PhoneAttempt[]
+  reads           PhoneMessageRead[]
+  notes           PhoneMessageNote[]
 
   @@index([urgent, status, nextAttemptAt])
+}
+
+model PhoneMessageNote {
+  id         String @id @default(cuid())
+  messageId  String
+  authorId   String?
+  authorName String
+  body       String
+  createdAt  DateTime @default(now())
+  message    PhoneMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  author     User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([messageId, createdAt])
+}
+
+model PhoneMessageRead {
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+  message   PhoneMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@index([userId])
 }
 
 model PhoneAttempt {

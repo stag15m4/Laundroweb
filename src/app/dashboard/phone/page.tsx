@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { PhoneCallNotes, type CallNote } from "@/components/phone/PhoneCallNotes";
 import { useSession } from "next-auth/react";
 import {
   Phone,
@@ -38,7 +39,10 @@ type Attempt = {
 type Message = {
   id: string;
   caller: string;
+  customerName: string | null;
+  notes: CallNote[];
   urgent: boolean;
+  unread: boolean;
   triageLevel: string;
   triageReason: string | null;
   triageSource: string | null;
@@ -135,6 +139,7 @@ export default function PhonePage() {
         body: JSON.stringify({ action }),
       });
       setNotice(body.message);
+      window.dispatchEvent(new Event("phone-inbox-changed"));
       await loadInbox();
     } catch (e) {
       setError((e as Error).message);
@@ -285,6 +290,7 @@ export default function PhonePage() {
                 <CardHeader className="pb-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
+                      {message.customerName && <p className="mb-1 font-semibold text-gray-900">{message.customerName}</p>}
                       <CardTitle className="text-base">
                         {/^\+\d+$/.test(message.caller) ? (
                           <a
@@ -305,6 +311,7 @@ export default function PhonePage() {
                       </p>
                     </div>
                     <div className="flex gap-2">
+                      {message.unread && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-800">New</span>}
                       <span
                         className={`rounded-full px-2 py-1 text-xs font-medium ${message.urgent ? "bg-amber-100 text-amber-900" : "bg-blue-50 text-blue-800"}`}
                       >
@@ -322,6 +329,7 @@ export default function PhonePage() {
                       <audio
                         className="w-full"
                         controls
+                        onPlay={() => { if (message.unread) void act(message.id, "read"); }}
                         preload="none"
                         src={`/api/phone/messages/${message.id}/audio`}
                         onError={() =>
@@ -408,6 +416,8 @@ export default function PhonePage() {
                       </ul>
                     </details>
                   )}
+                  <PhoneCallNotes messageId={message.id} customerName={message.customerName} notes={message.notes} onSaved={loadInbox} />
+                  {message.unread && <Button variant="ghost" disabled={busy === message.id} onClick={() => act(message.id, "read")}>Mark read</Button>}
                   {message.status !== "RESOLVED" && (
                     <div className="flex flex-wrap gap-2">
                       {message.status === "OPEN" && message.urgent && (

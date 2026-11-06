@@ -36,3 +36,9 @@ Sources checked October 15, 2026:
 ## Future security module (deferred)
 
 Seth requested a later security module for people of interest (POIs) and other triggers. Reuse the integration boundary where appropriate, but verify each Protect alarm's payload and supported actions before implementation. POI alerts, event history and other security rules are future scope; the entrance diagnostic receiver does not implement them or actuate doors/alarms.
+
+## Dashboard activity meter
+
+The owner dashboard now shows Dead / Slow / Average / Busy for the rolling past 60 minutes, without displaying event totals. Select the entrance crossing alarm once per browser; only that exact alarm contributes, so separate face/security alarms are excluded. The protected activity endpoint groups all retained events, not just the diagnostic screen's latest 20. Existing identical-payload deduplication remains in effect.
+
+Initial bands: 0 signals = Dead, 1–3 = Slow, 4–9 = Average, 10+ = Busy. These are provisional activity bands, not learned averages, unique customers, occupancy, or verified entries. Tune after observing normal traffic. Repeat trips intentionally contribute. Server receipt time drives the window, so delayed delivery can temporarily increase activity. No recent delivery cannot distinguish quiet from a disarmed alarm or broken sender. API errors hide old readings and show Unavailable. No matching alarm/expired seven-day history shows Setup needed. Refreshes every 30 seconds while visible and on return to the page. Counts and raw payloads are absent from the activity response; owner-only diagnostics remain on Cameras.

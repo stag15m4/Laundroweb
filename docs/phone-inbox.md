@@ -185,3 +185,36 @@ redacted provider explanation in alert history. Explicit 4xx rejections (except
 408) show REJECTED; transport timeouts and ambiguous server failures remain
 DELIVERY_UNCERTAIN. Both consume an attempt and retain the bounded retry interval.
 Runtime logs include only status/code, never contact numbers or credentials.
+
+## Unread message notifications
+
+Phone inbox navigation shows a red unread-count badge, including a shortcut in
+the mobile header. The dashboard shows a matching Phone messages card. Counts
+refresh every 30 seconds while the tab is visible, when the window regains focus,
+and after inbox actions. One shared poll feeds all indicators. On a failed refresh,
+the badge shows an unknown status rather than incorrectly claiming an empty inbox.
+
+Read state is per signed-in user: one staff member reviewing a voicemail does not
+clear the owner's unread badge. New badges clear when the user plays the recording,
+clicks Mark read, acknowledges, or resolves it. Opening the inbox alone does not
+mark unviewed pages/messages read. Resolved messages are excluded from the active
+unread count; a pending general call does not count until a recording exists.
+Urgent hang-ups still count so they remain visible. Existing unresolved messages
+start unread for each user when this feature is deployed.
+
+Reading is separate from acknowledgment: an unacknowledged urgent alert remains
+highlighted on the dashboard/navigation even after it is read. It still requires
+acknowledgment to stop calls. Counts and receipts use the existing owner/staff
+phone permissions, never expose another user's receipt, and are not OS-level
+push notifications or installed-app icon badges.
+
+## Customer names and action notes
+
+Each call has a Customer & action notes section, including resolved calls. Owner
+and staff users can save a customer name and append action notes (up to 5,000
+characters each). Notes retain the author name and time and are appended rather
+than replacing earlier entries, including when two staff save concurrently.
+Saving notes marks that message read for the author only. It does not acknowledge
+an alert, stop its calls or reopen a resolved message. Use the existing acknowledge
+and resolve actions separately. These details stay inside the authorized phone
+inbox and are not spoken in outbound alerts or sent to AI.

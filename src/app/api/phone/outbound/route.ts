@@ -1,14 +1,11 @@
+import { outboundOriginAllowed } from "@/lib/phone/origin";
 import { prisma } from "@/lib/prisma";
 import { denied, phoneUser } from "@/lib/phone/access";
 import { parseContacts } from "@/lib/phone/core";
 import { OutboundError, outboundActive, startOutboundCall } from "@/lib/phone/outbound";
-import { phoneUrl, providerAuth, providerReady } from "@/lib/phone/provider";
+import { providerAuth, providerReady } from "@/lib/phone/provider";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-function sameOrigin(req: Request) {
-  const origin = req.headers.get("origin");
-  return !!origin && (origin === new URL(req.url).origin || (providerReady() && origin === phoneUrl("")));
-}
 export async function GET() {
   const user = await phoneUser(true);
   if (!user) return denied();
@@ -22,7 +19,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const user = await phoneUser(true);
   if (!user) return denied();
-  if (!sameOrigin(req)) return Response.json({ message: "Open the dialer in Laundroweb to place calls." }, { status: 403 });
+  if (!outboundOriginAllowed(req)) return Response.json({ message: "Open the dialer in Laundroweb to place calls." }, { status: 403 });
   try {
     const text = await req.text();
     if (text.length > 2048) throw new OutboundError("Call request is too large.");
@@ -37,7 +34,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const user = await phoneUser(true);
   if (!user) return denied();
-  if (!sameOrigin(req)) return Response.json({ message: "Open Laundroweb to cancel calls." }, { status: 403 });
+  if (!outboundOriginAllowed(req)) return Response.json({ message: "Open Laundroweb to cancel calls." }, { status: 403 });
   try {
     const body = await req.json();
     const call = typeof body.id === "string" ? await prisma.phoneOutboundCall.findFirst({ where: { id: body.id, userId: user.id } }) : null;

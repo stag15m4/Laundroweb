@@ -81,6 +81,22 @@ test(
         assert.match(body.message, /Therm/);
       });
 
+      await t.test('normalizes the full word ("gallons", as documented in alfred-write-api.md) to "gal"', async () => {
+        const res = await POST(
+          post(url, {
+            type: "sewer",
+            billingPeriodStart: "2027-01-01",
+            billingPeriodEnd: "2027-01-31",
+            usageAmount: 10,
+            usageUnit: "gallons",
+            cost: 18.4,
+          })
+        );
+        const body = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(body.details.usageUnit, "gal");
+      });
+
       await t.test("confirm writes the normalized unit, not the raw input", async () => {
         const proposeRes = await POST(
           post(url, {

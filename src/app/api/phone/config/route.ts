@@ -27,7 +27,7 @@ export async function GET() {
     workerEnabled: process.env.PHONE_WORKER_ENABLED === "true",
     number: process.env.TWILIO_PHONE_NUMBER || null,
     multilingualReady: !!process.env.OPENAI_API_KEY,
-    triageAiReady: !!process.env.ANTHROPIC_API_KEY,
+    triageAiReady: !!process.env.OPENAI_API_KEY,
   });
 }
 export async function PUT(request: Request) {

@@ -152,9 +152,12 @@ and AI can make mistakes: live test with real callers before relying on routing.
 
 Set OPENAI_API_KEY in Railway for recorded multilingual speech transcription;
 the default PHONE_TRANSCRIPTION_MODEL is gpt-transcribe. Language is auto-detected,
-original text is preserved and AI provides an English summary. ANTHROPIC_API_KEY
-is used for classification; PHONE_TRIAGE_MODEL optionally overrides the existing
-app model. A missing/rejected speech or classification key, malformed output,
+original text is preserved and AI provides an English summary. The same
+OPENAI_API_KEY powers structured message classification through the Responses API,
+defaulting to gpt-6-luna; PHONE_TRIAGE_MODEL optionally overrides it. The phone
+system does not use the manuals module's separate Anthropic credentials/model.
+PHONE_TRIAGE_SELF_TEST=true runs one synthetic Sprite classification at startup,
+logging only the level/source and never creating a message or dialing a phone. A missing/rejected speech or classification key, malformed output,
 unclear language, or provider timeout leads to REVIEW rather than suppressing a
 potential emergency. Native Twilio transcription remains a backup source of
 hazard phrases, but English-only native transcription is not enough to clear a

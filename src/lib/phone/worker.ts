@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { escalationTarget, parseContacts, isOnCall } from "./core";
 import { processPhoneTriage } from "./triage-worker";
-import { bypassOnCallHours } from "./triage";
+import { bypassOnCallHours, classifyPhoneMessage } from "./triage";
 import { placeAlertCall, providerReady } from "./provider";
 
 // Database leases survive deployments and prevent multiple app processes from
@@ -121,6 +121,11 @@ const state = globalThis as unknown as {
 };
 export function startPhoneWorker() {
   if (state.phoneWorker || process.env.PHONE_WORKER_ENABLED !== "true") return;
+  if (process.env.PHONE_TRIAGE_SELF_TEST === "true") {
+    // Synthetic request only: no inbox writes, recordings or outbound calls.
+    void classifyPhoneMessage("This is a test. The vending machine did not dispense my Sprite. There is no safety issue.")
+      .then(result => console.info("Phone triage self-test:", JSON.stringify({ level: result.level, source: result.source })));
+  }
   const tick = async () => {
     if (state.phoneWorkerBusy) return;
     state.phoneWorkerBusy = true;

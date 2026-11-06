@@ -691,6 +691,7 @@ model PhoneConfig {
   contacts     Json     @default("[]")
   retrySeconds Int      @default(120)
   maxAttempts  Int      @default(6)
+  greetingAudioUrl String?
   onCallHoursEnabled Boolean @default(true)
   onCallStart String @default("06:00")
   onCallEnd String @default("22:00")
@@ -706,6 +707,16 @@ model PhoneMessage {
   recordingSid    String?   @unique
   duration        Int?
   transcript      String?
+  transcriptLanguage String?
+  transcriptionSource String?
+  transcriptionError String?
+  englishSummary String?
+  triageLevel     String    @default("PENDING")
+  triageReason    String?
+  triageSource    String?
+  triagedAt       DateTime?
+  triageLeaseUntil DateTime?
+  triageLeaseToken String?
   status          String    @default("OPEN") // OPEN / ACKNOWLEDGED / RESOLVED
   acknowledgedAt  DateTime?
   acknowledgedBy  String?

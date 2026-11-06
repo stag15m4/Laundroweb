@@ -10,6 +10,7 @@ export async function GET() {
     config: config ?? {
       enabled: false,
       greeting: "Thank you for calling the laundromat.",
+      greetingAudioUrl: null,
       information:
         "Please leave a general message for hours, location, or payment questions.",
       contacts: [],
@@ -25,6 +26,8 @@ export async function GET() {
     providerReady: providerReady(),
     workerEnabled: process.env.PHONE_WORKER_ENABLED === "true",
     number: process.env.TWILIO_PHONE_NUMBER || null,
+    multilingualReady: !!process.env.OPENAI_API_KEY,
+    triageAiReady: !!process.env.ANTHROPIC_API_KEY,
   });
 }
 export async function PUT(request: Request) {
@@ -32,6 +35,12 @@ export async function PUT(request: Request) {
   try {
     const body = await request.json();
     const contacts = parseContacts(body.contacts);
+    const greetingAudioUrl = typeof body.greetingAudioUrl === "string" && body.greetingAudioUrl.trim() ? body.greetingAudioUrl.trim() : null;
+    if (greetingAudioUrl) {
+      const audioUrl = new URL(greetingAudioUrl);
+      if (audioUrl.protocol !== "https:" || audioUrl.username || audioUrl.password || greetingAudioUrl.length > 2000)
+        throw new Error("Use a public HTTPS URL for the recorded greeting.");
+    }
     if (typeof body.onCallHoursEnabled !== "boolean" ||
         typeof body.onCallStart !== "string" || !timePattern.test(body.onCallStart) ||
         typeof body.onCallEnd !== "string" || !timePattern.test(body.onCallEnd) ||
@@ -74,6 +83,7 @@ export async function PUT(request: Request) {
       onCallStart: body.onCallStart,
       onCallEnd: body.onCallEnd,
       greeting: body.greeting.trim(),
+      greetingAudioUrl,
       information: body.information.trim(),
       contacts,
       retrySeconds: body.retrySeconds,

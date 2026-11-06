@@ -111,6 +111,9 @@ async function main() {
   check("phone inbox permits staff", (await fetch(`${BASE}/api/phone/messages`, { headers: { cookie: staff.cookie } })).status === 200);
   check("phone settings reject staff reads", (await fetch(`${BASE}/api/phone/config`, { headers: { cookie: staff.cookie } })).status === 403);
   check("phone settings reject staff writes", (await fetch(`${BASE}/api/phone/config`, { method: "PUT", headers: { cookie: staff.cookie, "Content-Type": "application/json" }, body: "{}" })).status === 403);
+  check("phone notifications reject anonymous access", (await fetch(`${BASE}/api/phone/notifications`)).status === 403);
+  check("phone notifications permit staff", (await fetch(`${BASE}/api/phone/notifications`, { headers: { cookie: staff.cookie } })).status === 200);
+  check("phone notifications permit owner", (await fetch(`${BASE}/api/phone/notifications`, { headers: ownerHeaders })).status === 200);
   check("phone settings permit owner", (await fetch(`${BASE}/api/phone/config`, { headers: ownerHeaders })).status === 200);
   check("unsigned telephone callbacks rejected", (await fetch(`${BASE}/api/phone/webhooks/incoming`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "Digits=9" })).status === 403);
 

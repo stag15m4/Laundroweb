@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, WashingMachine } from "lucide-react";
+import Link from "next/link";
+import { PhoneNotificationProvider, PhoneUnreadBadge } from "@/components/phone/PhoneNotifications";
+import { Menu, WashingMachine, Phone } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
+    <PhoneNotificationProvider>
     <div className="flex h-screen overflow-hidden">
       {/* Mobile backdrop */}
       {sidebarOpen && (
@@ -43,6 +46,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             <WashingMachine className="h-5 w-5 text-blue-400" />
             <span className="font-bold text-base tracking-tight">Laundroweb</span>
           </div>
+          <Link href="/dashboard/phone" className="ml-auto flex items-center gap-2 rounded-lg p-2 text-gray-600 hover:bg-gray-100" aria-label="Phone inbox">
+            <Phone className="h-5 w-5" /><PhoneUnreadBadge />
+          </Link>
         </header>
 
         <main className="flex-1 overflow-y-auto bg-gray-50">
@@ -50,5 +56,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
     </div>
+    </PhoneNotificationProvider>
   );
 }

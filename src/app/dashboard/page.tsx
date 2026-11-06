@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { PhoneDashboardNotice } from "@/components/phone/PhoneNotifications";
 import { Header } from "@/components/layout/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -105,6 +106,7 @@ export default async function DashboardPage() {
         })}
       />
       <div className="p-6 space-y-6">
+        <PhoneDashboardNotice />
         {isOwner && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard

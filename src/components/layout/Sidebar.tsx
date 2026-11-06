@@ -21,6 +21,7 @@ import {
   Phone,
   Undo2,
 } from "lucide-react";
+import { PhoneUnreadBadge } from "@/components/phone/PhoneNotifications";
 import { cn } from "@/lib/utils";
 
 const EQUIPMENT_PATHS = [
@@ -102,8 +103,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               )}
             >
               <Icon className="h-4 w-4 flex-shrink-0" />
-              {label}
-              {active && <ChevronRight className="ml-auto h-3 w-3" />}
+              <span>{label}</span>
+              <span className="ml-auto flex items-center gap-2">
+                {href === "/dashboard/phone" && <PhoneUnreadBadge />}
+                {active && <ChevronRight className="h-3 w-3" />}
+              </span>
             </Link>
           );
         })}

@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { denied, phoneUser } from "@/lib/phone/access";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
-  if (!(await phoneUser())) return denied();
+  const user = await phoneUser();
+  if (!user) return denied();
   const query = new URL(request.url).searchParams;
   const cursor = query.get("cursor");
   const filter = query.get("filter") || "active";
@@ -23,11 +24,11 @@ export async function GET(request: Request) {
       take: 51,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      include: { attempts: { orderBy: { sequence: "asc" } } },
+      include: { notes: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, authorName: true, body: true, createdAt: true } }, attempts: { orderBy: { sequence: "asc" } }, reads: { where: { userId: user.id }, select: { readAt: true } } },
     }),
     prisma.phoneMessage.count({ where: { urgent: true, status: "OPEN" } }),
   ]);
-  const messages = rows.slice(0, 50);
+  const messages = rows.slice(0, 50).map(({ reads, ...message }) => ({ ...message, unread: reads.length === 0 }));
   return Response.json({
     messages,
     openUrgent,

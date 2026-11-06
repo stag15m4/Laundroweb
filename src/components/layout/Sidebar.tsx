@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   BookOpen,
   Users,
-  Camera,
   LogOut,
   ChevronRight,
   Settings,
@@ -53,7 +52,6 @@ const ownerNav: NavItem[] = [
   { href: "/dashboard/contacts", label: "Contacts", icon: Users },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/documents", label: "Documents", icon: FileText },
-  { href: "/dashboard/cameras", label: "Cameras", icon: Camera },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
@@ -67,7 +65,6 @@ const staffNav: NavItem[] = [
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
   { href: "/dashboard/notes", label: "Notes", icon: BookOpen },
   { href: "/dashboard/documents", label: "Documents", icon: FileText },
-  { href: "/dashboard/cameras", label: "Cameras", icon: Camera },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

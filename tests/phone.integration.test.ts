@@ -156,7 +156,7 @@ test(
         await prisma.phoneConfig.update({ where: { id: "main" }, data: {
           onCallHoursEnabled: true, onCallStart: clock(hour + 2), onCallEnd: clock(hour + 3),
         } });
-        await makeDue(message.id);
+        await dueNow(message.id);
         const before = dialCount;
         await processPhoneAlerts();
         const pending = await prisma.phoneMessage.findUniqueOrThrow({ where: { id: message.id } });

@@ -31,12 +31,12 @@ export function TrafficActivityMeter() {
   const alarm = data?.alarms.find(a => a.name === selected);
   const level = !error && data?.configured ? alarm?.level : undefined;
   return <Card><CardContent className="p-5 space-y-3">
-    <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">How busy is it?</h2><span className="text-xl font-bold">{level ?? (error ? "Unavailable" : !data ? "Loading…" : "Setup needed")}</span></div>
+    <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">How busy is today?</h2><span className="text-xl font-bold">{level ?? (error ? "Unavailable" : !data ? "Loading…" : "Setup needed")}</span></div>
     <div className="grid grid-cols-4 gap-2" aria-label={level ? `Entrance activity: ${level}` : "Entrance activity unavailable"}>
       {TRAFFIC_LEVELS.map((label, index) => <div key={label} className="text-center text-xs"><div className={`mb-1 h-3 rounded-full ${level && index <= TRAFFIC_LEVELS.indexOf(level) ? ["bg-slate-400", "bg-blue-400", "bg-amber-400", "bg-orange-500"][index] : "bg-gray-100"}`} /><span className={label === level ? "font-bold text-gray-900" : "text-gray-500"}>{label}</span></div>)}
     </div>
-    <p className="text-xs text-gray-500">Entrance activity over the past hour. Repeat trips contribute; this does not show how many people are inside. Bands are provisional.</p>
-    {level === "Dead" && <p className="text-xs text-gray-500">No recent entrance signals. A disarmed alarm or interrupted connection can also look quiet.</p>}
+    <p className="text-xs text-gray-500">Today’s entrance activity since midnight Eastern. Repeat trips contribute; this does not show how many people are inside. Bands are provisional.</p>
+    {level === "Dead" && <p className="text-xs text-gray-500">No entrance signals today. A disarmed alarm or interrupted connection can also look quiet.</p>}
     {error && <p role="alert" className="text-sm text-red-600">Could not refresh activity. Previous readings are hidden until the connection recovers.</p>}
     <details open={!!data && !alarm} className="text-sm"><summary className="cursor-pointer text-blue-600">Entrance alarm settings</summary>
       <label className="mt-2 block">Choose only the entrance crossing alarm

@@ -82,7 +82,19 @@ export async function POST(req: NextRequest) {
   const confirmOverlap = body.confirmOverlap === true;
 
   const fascard = await fascardCategoryTotals(periodStart, periodEnd);
-  if (fascard.error) {
+  // TEMPORARY: while FasCard's Reports privilege issue is open with CCI
+  // support, this lets a collection save using only the weighed-coin total
+  // instead of being blocked outright. Normally a FasCard failure here fails
+  // the whole save closed, on purpose -- silently saving just the coin side
+  // would under-record whatever the reader-equipped machines took in. With
+  // this flag on, the physical collection still has to cover for that: the
+  // operator needs to weigh ALL washers/dryers this round, FasCard-equipped
+  // ones included, since nothing else is capturing their revenue right now.
+  // Remove FASCARD_COLLECTION_SKIP_ON_ERROR (and this whole block) once
+  // FasCard is reliable again -- failing closed is the correct default.
+  const skipFascardOnError = process.env.FASCARD_COLLECTION_SKIP_ON_ERROR === "true";
+  const fascardSkipped = Boolean(fascard.error) && skipFascardOnError;
+  if (fascard.error && !skipFascardOnError) {
     return NextResponse.json({ error: `FasCard lookup failed: ${fascard.error}` }, { status: 502 });
   }
 
@@ -127,9 +139,11 @@ export async function POST(req: NextRequest) {
       amount: round2(washerCoinDollars),
       source: "COIN",
       machineType: "WASHER",
-      notes: `Weighed coin collection, non-FasCard washers, ${periodLabel} (${washerCoinWeight!.value} ${washerCoinWeight!.unit}).`,
+      notes: fascardSkipped
+        ? `Weighed coin collection, ALL washers (FasCard lookup skipped: ${fascard.error}), ${periodLabel} (${washerCoinWeight!.value} ${washerCoinWeight!.unit}).`
+        : `Weighed coin collection, non-FasCard washers, ${periodLabel} (${washerCoinWeight!.value} ${washerCoinWeight!.unit}).`,
       collectedBy,
-      excludesFascardMachines: true,
+      excludesFascardMachines: !fascardSkipped,
     });
   }
   if (fascard.dryer.cash > 0) {
@@ -158,9 +172,11 @@ export async function POST(req: NextRequest) {
       amount: round2(dryerCoinDollars),
       source: "COIN",
       machineType: "DRYER",
-      notes: `Weighed coin collection, non-FasCard dryers, ${periodLabel} (${dryerCoinWeight!.value} ${dryerCoinWeight!.unit}).`,
+      notes: fascardSkipped
+        ? `Weighed coin collection, ALL dryers (FasCard lookup skipped: ${fascard.error}), ${periodLabel} (${dryerCoinWeight!.value} ${dryerCoinWeight!.unit}).`
+        : `Weighed coin collection, non-FasCard dryers, ${periodLabel} (${dryerCoinWeight!.value} ${dryerCoinWeight!.unit}).`,
       collectedBy,
-      excludesFascardMachines: true,
+      excludesFascardMachines: !fascardSkipped,
     });
   }
 

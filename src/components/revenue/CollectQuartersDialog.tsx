@@ -331,10 +331,19 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
                 </div>
               </div>
             </div>
-            <p className="text-xs text-gray-400">
-              Weigh only the non-FasCard machines -- reader-equipped washers and dryers are
-              already covered above. 1 quarter = 5.670 g / 0.2 oz, so $1 = 22.68 g = 0.8 oz.
-            </p>
+            {previewError ? (
+              <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
+                FasCard can&rsquo;t be reached, so it won&rsquo;t report reader-equipped machines&rsquo;
+                revenue for this round. Weigh ALL washers/dryers, FasCard-equipped ones included, or
+                their revenue won&rsquo;t be recorded at all. 1 quarter = 5.670 g / 0.2 oz, so $1 =
+                22.68 g = 0.8 oz.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400">
+                Weigh only the non-FasCard machines -- reader-equipped washers and dryers are
+                already covered above. 1 quarter = 5.670 g / 0.2 oz, so $1 = 22.68 g = 0.8 oz.
+              </p>
+            )}
 
             <div className="space-y-1.5">
               <Label>

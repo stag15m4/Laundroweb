@@ -188,6 +188,13 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
     }
   }
 
+  // The preview endpoint reports a FasCard failure as a 200 with `error` set
+  // in the body, not a non-2xx -- previewError alone only catches a request
+  // that failed outright (network error, non-OK status), so it misses this
+  // case and would keep telling the operator to weigh only non-FasCard
+  // machines while the save-time bypass silently treats that weight as
+  // covering everything.
+  const fascardUnreachable = Boolean(previewError) || Boolean(preview?.error);
   const washerFascard = (preview?.washer.cash ?? 0) + (preview?.washer.card ?? 0);
   const dryerFascard = (preview?.dryer.cash ?? 0) + (preview?.dryer.card ?? 0);
   const washerTotal = washerFascard + weightDollars(washerWeight);
@@ -331,7 +338,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
                 </div>
               </div>
             </div>
-            {previewError ? (
+            {fascardUnreachable ? (
               <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
                 FasCard can&rsquo;t be reached, so it won&rsquo;t report reader-equipped machines&rsquo;
                 revenue for this round. Weigh ALL washers/dryers, FasCard-equipped ones included, or

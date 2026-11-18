@@ -141,13 +141,8 @@ const TRANSACT_MAX_PAGES = 20; // safety cap: 10,000 transactions
  * predates `sinceUTC`, or the safety cap is hit; the final filter then
  * narrows to the requested window.
  *
- * The exact direction `lastID`/`Older` page in is not spelled out in CCI's
- * docs beyond the field names, so this assumes the conventional reading:
- * the first call (no lastID) returns the most recent transactions, and
- * passing the lowest ID seen so far as `lastID` with `Older: true` continues
- * further back in time. `diagnostics` reports what was actually observed
- * (page count, ID and date range) so a caller can tell if that assumption
- * held or the results look wrong.
+ * Start after ID zero, then fetch records older than the lowest ID on
+ * the preceding page. FasCard expects cursor parameters on the first call.
  */
 export async function fascardRecentTransactions(
   sinceUTC: Date,
@@ -172,11 +167,9 @@ export async function fascardRecentTransactions(
       AccountID: accountId,
       UserAccountID: "0",
       Limit: String(TRANSACT_PAGE_SIZE),
+      lastID: String(lastId ?? 0),
+      Older: String(lastId !== null),
     });
-    if (lastId !== null) {
-      params.set("lastID", String(lastId));
-      params.set("Older", "true");
-    }
 
     const result = await fascardGet(`/api/Transact?${params.toString()}`);
     const batch: FascardTransaction[] = Array.isArray(result)

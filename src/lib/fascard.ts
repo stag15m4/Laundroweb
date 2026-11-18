@@ -75,7 +75,12 @@ async function request(method: "GET" | "POST", path: string, body?: unknown): Pr
   }
 
   const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error(`FasCard ${method} ${path} returned HTTP ${res.status} with a non-JSON response.`);
+  }
 
   if (!res.ok) {
     const message = typeof json === "object" && json && "Message" in json ? (json as { Message: string }).Message : text;

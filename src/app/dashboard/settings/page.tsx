@@ -290,14 +290,28 @@ export default function SettingsPage() {
         return;
       }
     }
-    const res = await fetch("/api/fascard/explore", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: fcPath, method: fcMethod, body: parsedBody }),
-    });
-    const data = await res.json();
-    setFcExploring(false);
-    setFcExploreResult({ ok: res.ok && data.ok, body: JSON.stringify(data, null, 2) });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch("/api/fascard/explore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: fcPath, method: fcMethod, body: parsedBody }),
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => null);
+      setFcExploreResult({
+        ok: res.ok && data?.ok === true,
+        body: data ? JSON.stringify(data, null, 2) : `Laundroweb returned HTTP ${res.status} without a JSON result.`,
+      });
+    } catch {
+      setFcExploreResult({ ok: false, body: controller.signal.aborted
+        ? "No response received within 30 seconds."
+        : "The connection to Laundroweb was interrupted." });
+    } finally {
+      clearTimeout(timeout);
+      setFcExploring(false);
+    }
   }
 
   async function handleDeleteUser(id: string, name: string) {

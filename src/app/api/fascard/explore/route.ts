@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "Unknown error" },
-      { status: 502 }
+      // The diagnostic completed. Report upstream failure in its result.
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   }
 }

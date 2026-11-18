@@ -63,31 +63,45 @@ async function request(method: "GET" | "POST", path: string, body?: unknown): Pr
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
-  let token = await getToken();
-  let res = await doRequest(token);
-
-  // The documented token lifetime is unknown, so a 401 here is treated as
-  // "the cached token expired" and retried once with a fresh one, rather
-  // than assumed to be a real auth failure.
-  if (res.status === 401) {
-    token = await getToken(true);
-    res = await doRequest(token);
-  }
-
-  const text = await res.text();
-  let json = null;
+  const reporting = method === "GET" && path.split("?")[0] === "/api/Transact";
+  let stage = "authentication";
   try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    throw new Error(`FasCard ${method} ${path} returned HTTP ${res.status} with a non-JSON response.`);
-  }
+    let token = await getToken();
+    stage = "transaction request";
+    let res = await doRequest(token);
 
-  if (!res.ok) {
-    const message = typeof json === "object" && json && "Message" in json ? (json as { Message: string }).Message : text;
-    throw new Error(`FasCard ${method} ${path} failed: ${res.status} ${message}`.trim());
-  }
+    // The documented token lifetime is unknown, so a 401 here is treated as
+    // "the cached token expired" and retried once with a fresh one, rather
+    // than assumed to be a real auth failure.
+    if (res.status === 401) {
+      stage = "authentication retry";
+      token = await getToken(true);
+      stage = "transaction retry";
+      res = await doRequest(token);
+    }
 
-  return json;
+    if (reporting && !res.ok) {
+      console.warn("[FasCard] Transaction request returned HTTP", res.status);
+    }
+    stage = "response decoding";
+    const text = await res.text();
+    let json = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      throw new Error(`FasCard ${method} ${path} returned HTTP ${res.status} with a non-JSON response.`);
+    }
+
+    if (!res.ok) {
+      const message = typeof json === "object" && json && "Message" in json ? (json as { Message: string }).Message : text;
+      throw new Error(`FasCard ${method} ${path} failed: ${res.status} ${message}`.trim());
+    }
+
+    return json;
+  } catch (error) {
+    if (reporting) console.warn("[FasCard] Transaction lookup failed during", stage);
+    throw error;
+  }
 }
 
 export function fascardGet(path: string): Promise<unknown> {

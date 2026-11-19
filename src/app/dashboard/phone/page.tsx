@@ -1,6 +1,6 @@
 "use client";
 import { weekdays, legacyWeek, type OnCallDay } from "@/lib/phone/schedule";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { OutboundDialer } from "@/components/phone/OutboundDialer";
 import { PhoneCallNotes, type CallNote } from "@/components/phone/PhoneCallNotes";
 import { useSession } from "next-auth/react";
@@ -82,6 +82,21 @@ export default function PhonePage() {
   const [dialTarget, setDialTarget] = useState<string | null>(null);
   const [tab, setTab] = useState<"inbox" | "settings">("inbox");
   const [filter, setFilter] = useState("active");
+  const [searchText, setSearchText] = useState("");
+  const [history, setHistory] = useState("");
+  const requestVersion = useRef(0);
+  const inboxUrl = "/api/phone/messages?" + new URLSearchParams({ filter, history });
+  function showHistory(value: string) {
+    if (value.trim() !== history || filter !== "all") {
+      requestVersion.current++;
+      setMessages([]);
+      setCursor(null);
+    }
+    setSearchText(value);
+    setHistory(value.trim());
+    setFilter("all");
+    setError("");
+  }
   const [messages, setMessages] = useState<Message[]>([]);
   const [openUrgent, setOpenUrgent] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -100,17 +115,19 @@ export default function PhonePage() {
   });
   const [audioErrors, setAudioErrors] = useState<Record<string, boolean>>({});
   const loadInbox = useCallback(async () => {
+    const version = ++requestVersion.current;
     try {
-      const body = await api(`/api/phone/messages?filter=${filter}`);
+      const body = await api(inboxUrl);
+      if (version !== requestVersion.current) return;
       setMessages(body.messages);
       setCursor(body.nextCursor);
       setOpenUrgent(body.openUrgent);
     } catch (e) {
-      setError((e as Error).message);
+      if (version === requestVersion.current) setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
-  }, [filter]);
+  }, [inboxUrl]);
   useEffect(() => {
     setLoading(true);
     void loadInbox();
@@ -171,11 +188,13 @@ export default function PhonePage() {
   }
   async function more() {
     if (!cursor) return;
+    const version = ++requestVersion.current;
     setBusy("more");
     try {
       const body = await api(
-        `/api/phone/messages?filter=${filter}&cursor=${encodeURIComponent(cursor)}`,
+        `${inboxUrl}&cursor=${encodeURIComponent(cursor)}`,
       );
+      if (version !== requestVersion.current) return;
       setMessages((previous) => [...previous, ...body.messages]);
       setCursor(body.nextCursor);
     } catch (e) {
@@ -250,6 +269,13 @@ export default function PhonePage() {
       )}
       {tab === "inbox" && (
         <>
+          <form className="flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); showHistory(searchText); }}>
+            <Input className="max-w-sm" aria-label="Customer name or phone number" placeholder="Customer name or phone number" maxLength={120}
+              value={searchText} onChange={event => setSearchText(event.target.value)} />
+            <Button type="submit" variant="outline">Find history</Button>
+            {history && <Button type="button" variant="ghost" onClick={() => showHistory("")}>Clear search</Button>}
+          </form>
+          {history && <p className="text-sm text-gray-600">Caller history for {history}. Unnamed messages may belong to anyone using the same number.</p>}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
               {[
@@ -284,7 +310,22 @@ export default function PhonePage() {
               </CardContent>
             </Card>
           ) : (
-            messages.map((message) => (
+            messages.map((message) => history ? (
+              <Card key={message.id}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">{message.customerName || "Name not recorded"} · {message.caller}</CardTitle>
+                  <p className="text-xs text-gray-500">{date(message.createdAt)}</p>
+                </CardHeader>
+                <CardContent>
+                  {message.notes.length ? <ul className="space-y-2">{message.notes.map(note => (
+                    <li key={note.id}>
+                      <p className="whitespace-pre-wrap break-words">{note.body}</p>
+                      <p className="text-xs text-gray-500">{note.authorName} · {date(note.createdAt)}</p>
+                    </li>
+                  ))}</ul> : <p className="text-sm text-gray-500">No notes recorded.</p>}
+                </CardContent>
+              </Card>
+            ) : (
               <Card
                 key={message.id}
                 className={
@@ -299,6 +340,7 @@ export default function PhonePage() {
                       {message.customerName && <p className="mb-1 font-semibold text-gray-900">{message.customerName}</p>}
                       <CardTitle className="text-base">
                         {owner ? <span>{message.caller}</span> : /^\+\d+$/.test(message.caller) ? <a className="hover:underline" href={`tel:${message.caller}`}>{message.caller}</a> : message.caller}
+                        {/^\+?[1-9]\d{6,14}$/.test(message.caller) && <Button size="sm" variant="outline" className="ml-3" onClick={() => showHistory(message.caller)}>View number history</Button>}
                         {owner && /^\+1[2-9]\d{9}$/.test(message.caller) && <Button size="sm" variant="outline" className="ml-3" onClick={() => setDialTarget(message.caller)}>Call customer</Button>}
                       </CardTitle>
                       <p className="mt-1 text-xs text-gray-500">

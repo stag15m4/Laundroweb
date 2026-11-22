@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { CollectQuartersDialog } from "@/components/revenue/CollectQuartersDialog";
+import { DailyReportDialog } from "@/components/revenue/DailyReportDialog";
 import { CashOnHandCard } from "@/components/revenue/CashOnHandCard";
 import { PageTabs } from "@/components/layout/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -290,6 +291,7 @@ export default function RevenuePage() {
     <div>
       <Header title="Revenue" description="Track coin vault collections and card payments">
         <div className="flex items-center gap-2">
+          {isOwner && <DailyReportDialog onSaved={refreshEntries} />}
           {isOwner && (
             <CollectQuartersDialog
               onSaved={() => {

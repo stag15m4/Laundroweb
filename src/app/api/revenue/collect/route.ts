@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { coinWeightToDollars, fascardCategoryTotals, WeightUnit } from "@/lib/revenueCollection";
+import { coinWeightToDollars, WeightUnit } from "@/lib/revenueCollection";
 
 class PeriodOverlapError extends Error {
   // lastCollectionEnd is the raw ISO instant -- the client re-renders it in
@@ -36,10 +36,7 @@ function parseWeight(input: unknown): Weight | null {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // POST /api/revenue/collect
-// Saves a washer/dryer quarter collection: FasCard-reported revenue for
-// reader-equipped machines (recomputed here, never trusted from the client)
-// plus the operator's weighed-coin totals for everything else, as one or
-// more RevenueEntry rows per category. Cash removed from the coin changer
+// Saves weighed coin from every washer and dryer. Cash removed from the coin changer
 // isn't revenue -- it's bills already exchanged for quarters, not new
 // money -- so it never becomes a RevenueEntry; it's logged as its own
 // CoinChangerLog row instead, which is what feeds Cash on Hand.
@@ -81,23 +78,6 @@ export async function POST(req: NextRequest) {
   const collectedBy = typeof body.collectedBy === "string" && body.collectedBy.trim() ? body.collectedBy.trim() : null;
   const confirmOverlap = body.confirmOverlap === true;
 
-  const fascard = await fascardCategoryTotals(periodStart, periodEnd);
-  // TEMPORARY: while FasCard's Reports privilege issue is open with CCI
-  // support, this lets a collection save using only the weighed-coin total
-  // instead of being blocked outright. Normally a FasCard failure here fails
-  // the whole save closed, on purpose -- silently saving just the coin side
-  // would under-record whatever the reader-equipped machines took in. With
-  // this flag on, the physical collection still has to cover for that: the
-  // operator needs to weigh ALL washers/dryers this round, FasCard-equipped
-  // ones included, since nothing else is capturing their revenue right now.
-  // Remove FASCARD_COLLECTION_SKIP_ON_ERROR (and this whole block) once
-  // FasCard is reliable again -- failing closed is the correct default.
-  const skipFascardOnError = process.env.FASCARD_COLLECTION_SKIP_ON_ERROR === "true";
-  const fascardSkipped = Boolean(fascard.error) && skipFascardOnError;
-  if (fascard.error && !skipFascardOnError) {
-    return NextResponse.json({ error: `FasCard lookup failed: ${fascard.error}` }, { status: 502 });
-  }
-
   const washerCoinDollars = washerCoinWeight ? coinWeightToDollars(washerCoinWeight.value, washerCoinWeight.unit) : 0;
   const dryerCoinDollars = dryerCoinWeight ? coinWeightToDollars(dryerCoinWeight.value, dryerCoinWeight.unit) : 0;
 
@@ -113,57 +93,15 @@ export async function POST(req: NextRequest) {
     excludesFascardMachines?: boolean;
   }[] = [];
 
-  if (fascard.washer.cash > 0) {
-    rows.push({
-      date: periodEnd,
-      amount: round2(fascard.washer.cash),
-      source: "COIN",
-      machineType: "WASHER",
-      notes: `FasCard-reported coin vends, reader-equipped washers, ${periodLabel}.`,
-      collectedBy,
-    });
-  }
-  if (fascard.washer.card > 0) {
-    rows.push({
-      date: periodEnd,
-      amount: round2(fascard.washer.card),
-      source: "CARD",
-      machineType: "WASHER",
-      notes: `FasCard-reported card vends, reader-equipped washers, ${periodLabel}.`,
-      collectedBy,
-    });
-  }
   if (washerCoinDollars > 0) {
     rows.push({
       date: periodEnd,
       amount: round2(washerCoinDollars),
       source: "COIN",
       machineType: "WASHER",
-      notes: fascardSkipped
-        ? `Weighed coin collection, ALL washers (FasCard lookup skipped: ${fascard.error}), ${periodLabel} (${washerCoinWeight!.value} ${washerCoinWeight!.unit}).`
-        : `Weighed coin collection, non-FasCard washers, ${periodLabel} (${washerCoinWeight!.value} ${washerCoinWeight!.unit}).`,
+      notes: `Weighed coin collection, ALL washers, ${periodLabel} (${washerCoinWeight!.value} ${washerCoinWeight!.unit}).`,
       collectedBy,
-      excludesFascardMachines: !fascardSkipped,
-    });
-  }
-  if (fascard.dryer.cash > 0) {
-    rows.push({
-      date: periodEnd,
-      amount: round2(fascard.dryer.cash),
-      source: "COIN",
-      machineType: "DRYER",
-      notes: `FasCard-reported coin vends, reader-equipped dryers, ${periodLabel}.`,
-      collectedBy,
-    });
-  }
-  if (fascard.dryer.card > 0) {
-    rows.push({
-      date: periodEnd,
-      amount: round2(fascard.dryer.card),
-      source: "CARD",
-      machineType: "DRYER",
-      notes: `FasCard-reported card vends, reader-equipped dryers, ${periodLabel}.`,
-      collectedBy,
+      excludesFascardMachines: false,
     });
   }
   if (dryerCoinDollars > 0) {
@@ -172,17 +110,15 @@ export async function POST(req: NextRequest) {
       amount: round2(dryerCoinDollars),
       source: "COIN",
       machineType: "DRYER",
-      notes: fascardSkipped
-        ? `Weighed coin collection, ALL dryers (FasCard lookup skipped: ${fascard.error}), ${periodLabel} (${dryerCoinWeight!.value} ${dryerCoinWeight!.unit}).`
-        : `Weighed coin collection, non-FasCard dryers, ${periodLabel} (${dryerCoinWeight!.value} ${dryerCoinWeight!.unit}).`,
+      notes: `Weighed coin collection, ALL dryers, ${periodLabel} (${dryerCoinWeight!.value} ${dryerCoinWeight!.unit}).`,
       collectedBy,
-      excludesFascardMachines: !fascardSkipped,
+      excludesFascardMachines: false,
     });
   }
 
   if (rows.length === 0 && !changerCash) {
     return NextResponse.json(
-      { error: "Nothing to save -- no FasCard revenue, weighed coin, or changer cash was given." },
+      { error: "Nothing to save -- no weighed coin or changer cash was given." },
       { status: 400 }
     );
   }
@@ -260,8 +196,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       entries: created.entries,
       summary: {
-        washerTotal: round2(fascard.washer.cash + fascard.washer.card + washerCoinDollars),
-        dryerTotal: round2(fascard.dryer.cash + fascard.dryer.card + dryerCoinDollars),
+        washerTotal: round2(washerCoinDollars),
+        dryerTotal: round2(dryerCoinDollars),
         changerCash: created.changerLog ? round2(changerCash!) : null,
       },
     });

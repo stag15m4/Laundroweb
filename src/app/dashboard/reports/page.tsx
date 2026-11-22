@@ -429,21 +429,6 @@ export default function ReportsPage() {
                       </div>
                     </dl>
 
-                    {turns.measured.error && (
-                      <p className="mt-3 text-xs text-red-700 bg-red-50 rounded-md px-3 py-2">
-                        Couldn&apos;t reach FasCard for the measured washers this time ({turns.measured.error}), so
-                        they&apos;re counted as 0 turns above until the next refresh.
-                      </p>
-                    )}
-                    {turns.estimated.ambiguousRevenue > 0 && (
-                      <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
-                        {formatCurrency(turns.estimated.ambiguousRevenue)} of this month&apos;s washer revenue was
-                        logged as &quot;All washers&quot; rather than a specific machine. Now that some washers are
-                        measured directly, that can&apos;t be split between them and the cash-only ones without
-                        double-counting, so it&apos;s left out of the estimate. Log collections per machine on the
-                        Revenue page to include it.
-                      </p>
-                    )}
                     {turns.estimated.unattributedRevenue > 0 && (
                       <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
                         {formatCurrency(turns.estimated.unattributedRevenue)} of this month&apos;s revenue is not
@@ -454,14 +439,12 @@ export default function ReportsPage() {
                     {turns.estimated.washerCount > 0 && turns.estimated.pricedWashers < turns.estimated.washerCount && (
                       <p className="mt-2 text-xs text-amber-700">
                         {turns.estimated.washerCount - turns.estimated.pricedWashers} of{" "}
-                        {turns.estimated.washerCount} cash-only washers have no configured price, so the assumed
+                        {turns.estimated.washerCount} washers have no configured price, so the assumed
                         vend comes from the other {turns.estimated.pricedWashers}.
                       </p>
                     )}
                     <p className="mt-2 text-xs text-gray-400">
-                      {turns.measured.washerCount > 0
-                        ? "Washers with a FasCard reader (Equipment → FasCard Machine #) show real counts. Cash-only washers are still inferred from revenue ÷ the average cycle price."
-                        : "Cycles are inferred from money until a machine has a FasCard reader; the vend price is the average cycle price across your washers."}
+                      Turns are estimated from recorded washer revenue divided by the average cycle price. Unattributed card revenue is excluded.
                     </p>
                   </div>
                 </div>

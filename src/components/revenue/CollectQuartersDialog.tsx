@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
-import { Coins, RefreshCw } from "lucide-react";
+import { Coins } from "lucide-react";
 import { format, subDays } from "date-fns";
 
 // datetime-local wants "yyyy-MM-ddTHH:mm:ss" in the viewer's own local time
@@ -15,22 +15,9 @@ import { format, subDays } from "date-fns";
 // whatever "local" means on the machine actually doing the collecting.
 // Seconds matter here: the default start is carried over to the second from
 // the previous collection's end, and truncating them on format would quietly
-// round it to the start of that minute, re-asking FasCard about time already
+// round it to the start of that minute, re-recording time already
 // covered (dropping the seconds entirely, not just displaying them rounded).
 const DATETIME_LOCAL_FORMAT = "yyyy-MM-dd'T'HH:mm:ss";
-
-type CategoryTotals = {
-  cash: number;
-  card: number;
-  machines: { id: string; name: string; fascardMachNo: number; cash: number; card: number }[];
-};
-
-type PreviewResult = {
-  configured: boolean;
-  error: string | null;
-  washer: CategoryTotals;
-  dryer: CategoryTotals;
-};
 
 type Weight = { value: string; unit: "g" | "oz" };
 
@@ -58,10 +45,6 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
   const [open, setOpen] = useState(false);
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState(format(new Date(), DATETIME_LOCAL_FORMAT));
-  const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState("");
-
   const [washerWeight, setWasherWeight] = useState<Weight>(emptyWeight);
   const [dryerWeight, setDryerWeight] = useState<Weight>(emptyWeight);
   const [changerCash, setChangerCash] = useState("");
@@ -76,31 +59,6 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
     changerCash: number | null;
   } | null>(null);
 
-  async function fetchPreview(start: string, end: string) {
-    const startIso = toIso(start);
-    const endIso = toIso(end);
-    if (!startIso || !endIso) return;
-    setPreviewLoading(true);
-    setPreviewError("");
-    try {
-      const res = await fetch(
-        `/api/revenue/collect/preview?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        setPreviewError(data.error ?? "Failed to load FasCard preview.");
-        setPreview(null);
-      } else {
-        setPreview(data);
-      }
-    } catch {
-      setPreviewError("Failed to load FasCard preview.");
-      setPreview(null);
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
-
   async function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) return;
@@ -114,7 +72,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
     setCollectedBy("");
 
     // The next period logically begins the instant the last one ended.
-    // FasCard windows (and the overlap check below) are already half-open --
+    // Collection windows (and the overlap check below) are already half-open --
     // [start, end) -- so the previous period never actually included its own
     // end instant. The next one should start exactly there, not a second
     // later: advancing past it would leave that instant uncovered by either
@@ -136,7 +94,6 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
     const endStr = format(new Date(), DATETIME_LOCAL_FORMAT);
     setPeriodStart(startStr);
     setPeriodEnd(endStr);
-    fetchPreview(startStr, endStr);
   }
 
   async function handleSave(confirmOverlap = false) {
@@ -188,17 +145,8 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
     }
   }
 
-  // The preview endpoint reports a FasCard failure as a 200 with `error` set
-  // in the body, not a non-2xx -- previewError alone only catches a request
-  // that failed outright (network error, non-OK status), so it misses this
-  // case and would keep telling the operator to weigh only non-FasCard
-  // machines while the save-time bypass silently treats that weight as
-  // covering everything.
-  const fascardUnreachable = Boolean(previewError) || Boolean(preview?.error);
-  const washerFascard = (preview?.washer.cash ?? 0) + (preview?.washer.card ?? 0);
-  const dryerFascard = (preview?.dryer.cash ?? 0) + (preview?.dryer.card ?? 0);
-  const washerTotal = washerFascard + weightDollars(washerWeight);
-  const dryerTotal = dryerFascard + weightDollars(dryerWeight);
+  const washerTotal = weightDollars(washerWeight);
+  const dryerTotal = weightDollars(dryerWeight);
   const nothingToSave = washerTotal <= 0 && dryerTotal <= 0 && !changerCash;
 
   return (
@@ -241,7 +189,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
                   step="1"
                   value={periodStart}
                   onChange={(e) => setPeriodStart(e.target.value)}
-                  onBlur={() => fetchPreview(periodStart, periodEnd)}
+
                 />
               </div>
               <div className="space-y-1.5">
@@ -251,7 +199,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
                   step="1"
                   value={periodEnd}
                   onChange={(e) => setPeriodEnd(e.target.value)}
-                  onBlur={() => fetchPreview(periodStart, periodEnd)}
+
                 />
               </div>
             </div>
@@ -260,35 +208,6 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
               gap or overlap. Adjust it yourself if a collection was made while the app was
               unavailable.
             </p>
-
-            <div className="rounded-lg border border-gray-200 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-gray-500">FasCard (reader-equipped machines)</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => fetchPreview(periodStart, periodEnd)}
-                  disabled={previewLoading}
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${previewLoading ? "animate-spin" : ""}`} />
-                </Button>
-              </div>
-              {previewError && <p className="text-sm text-red-600 mt-1">{previewError}</p>}
-              {preview && !preview.configured && (
-                <p className="text-sm text-gray-500 mt-1">
-                  FasCard isn&rsquo;t configured -- only weighed coin will be recorded.
-                </p>
-              )}
-              {preview?.configured && !preview.error && (
-                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  <dt className="text-gray-500">Washers (cash + card)</dt>
-                  <dd className="text-right font-medium">{formatCurrency(washerFascard)}</dd>
-                  <dt className="text-gray-500">Dryers (cash + card)</dt>
-                  <dd className="text-right font-medium">{formatCurrency(dryerFascard)}</dd>
-                </dl>
-              )}
-            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -338,19 +257,7 @@ export function CollectQuartersDialog({ onSaved }: { onSaved: () => void }) {
                 </div>
               </div>
             </div>
-            {fascardUnreachable ? (
-              <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
-                FasCard can&rsquo;t be reached, so it won&rsquo;t report reader-equipped machines&rsquo;
-                revenue for this round. Weigh ALL washers/dryers, FasCard-equipped ones included, or
-                their revenue won&rsquo;t be recorded at all. 1 quarter = 5.670 g / 0.2 oz, so $1 =
-                22.68 g = 0.8 oz.
-              </p>
-            ) : (
-              <p className="text-xs text-gray-400">
-                Weigh only the non-FasCard machines -- reader-equipped washers and dryers are
-                already covered above. 1 quarter = 5.670 g / 0.2 oz, so $1 = 22.68 g = 0.8 oz.
-              </p>
-            )}
+            <p className="text-xs text-gray-500">Weigh ALL washers and dryers, including reader-equipped machines. 1 quarter = 5.670 g / 0.2 oz; $1 = 22.68 g / 0.8 oz. Card revenue is recorded separately.</p>
 
             <div className="space-y-1.5">
               <Label>

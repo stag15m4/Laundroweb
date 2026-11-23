@@ -39,12 +39,6 @@ function rangeSpan(range: RevenueExportData["range"]): string {
   return `${range.from ?? "start"}-to-${range.to ?? "now"}`;
 }
 
-/**
- * One row per RevenueEntry, plus a clearly separate block for coin-changer
- * cash (it isn't revenue, so it never shares a row or a column with the
- * entries above it -- a spreadsheet SUM over the revenue amount column
- * must not need to know to skip it).
- */
 function csvEscape(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
@@ -59,36 +53,73 @@ function downloadBlob(content: string, mimeType: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+type CsvRow = {
+  date: string;
+  type: string;
+  revenueAmount: number | null;
+  changerAmount: number | null;
+  source: string;
+  machineLabel: string | null;
+  collectedBy: string | null;
+  notes: string | null;
+  collectionId: string | null;
+};
+
+/**
+ * One row per RevenueEntry or CoinChangerLog, interleaved in date order, but
+ * revenue and coin-changer cash (not revenue -- bills exchanged for
+ * quarters) are kept in two separate amount columns rather than sharing
+ * one. A heading row and blank line visually separate them but don't
+ * separate spreadsheet columns -- summing a shared "Amount" column would
+ * silently add changer cash into revenue. Two columns means summing either
+ * one alone is always correct.
+ */
 export function buildRevenueCsv(data: RevenueExportData) {
+  const rows: CsvRow[] = [
+    ...data.entries.map((e): CsvRow => ({
+      date: e.date,
+      type: "Revenue",
+      revenueAmount: e.amount,
+      changerAmount: null,
+      source: e.source,
+      machineLabel: e.machineLabel,
+      collectedBy: e.collectedBy,
+      notes: e.notes,
+      collectionId: e.collectionId,
+    })),
+    ...data.changerLogs.map((c): CsvRow => ({
+      date: c.date,
+      type: "Coin changer (not revenue)",
+      revenueAmount: null,
+      changerAmount: c.amount,
+      source: "",
+      machineLabel: null,
+      collectedBy: null,
+      notes: c.notes,
+      collectionId: c.collectionId,
+    })),
+  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
   const lines: string[] = [];
-  lines.push(["Date", "Amount", "Source", "Machine", "Collected By", "Notes", "Collection ID"].join(","));
-  for (const e of data.entries) {
+  lines.push(
+    ["Date", "Type", "Revenue Amount", "Changer Cash (not revenue)", "Source", "Machine", "Collected By", "Notes", "Collection ID"].join(",")
+  );
+  for (const r of rows) {
     lines.push(
       [
-        day(e.date),
-        e.amount.toFixed(2),
-        e.source,
-        e.machineLabel ?? "",
-        e.collectedBy ?? "",
-        e.notes ?? "",
-        e.collectionId ?? "",
+        day(r.date),
+        r.type,
+        r.revenueAmount != null ? r.revenueAmount.toFixed(2) : "",
+        r.changerAmount != null ? r.changerAmount.toFixed(2) : "",
+        r.source,
+        r.machineLabel ?? "",
+        r.collectedBy ?? "",
+        r.notes ?? "",
+        r.collectionId ?? "",
       ]
         .map((v) => csvEscape(String(v)))
         .join(",")
     );
-  }
-
-  if (data.changerLogs.length > 0) {
-    lines.push("");
-    lines.push("Coin changer cash (not revenue -- bills exchanged for quarters)");
-    lines.push(["Date", "Amount", "Notes", "Collection ID"].join(","));
-    for (const c of data.changerLogs) {
-      lines.push(
-        [day(c.date), c.amount.toFixed(2), c.notes ?? "", c.collectionId ?? ""]
-          .map((v) => csvEscape(String(v)))
-          .join(",")
-      );
-    }
   }
 
   downloadBlob(lines.join("\n"), "text/csv;charset=utf-8", `revenue-${rangeSpan(data.range)}.csv`);

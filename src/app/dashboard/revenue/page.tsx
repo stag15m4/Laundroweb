@@ -153,13 +153,34 @@ export default function RevenuePage() {
     setExportTo(to ? format(to, "yyyy-MM-dd") : "");
   }
 
+  // A date-input value ("2026-11-18") has no timezone of its own -- handing
+  // it to the server as-is would let the server parse it in ITS timezone
+  // instead of whatever "the 18th" means where the browser actually is
+  // (same reasoning as CollectQuartersDialog's toIso()). Resolving it to a
+  // real instant here, in the browser that knows what "local" means, keeps
+  // the exported range matching the calendar days actually picked.
+  function localDayStartIso(dateStr: string): string {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(y, m - 1, d).toISOString();
+  }
+  function localDayEndExclusiveIso(dateStr: string): string {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(y, m - 1, d + 1).toISOString();
+  }
+
   async function runExport(kind: "csv" | "pdf") {
     setExportError("");
     setExportBusy(kind);
     try {
       const params = new URLSearchParams();
-      if (exportFrom) params.set("from", exportFrom);
-      if (exportTo) params.set("to", exportTo);
+      if (exportFrom) {
+        params.set("from", localDayStartIso(exportFrom));
+        params.set("fromLabel", exportFrom);
+      }
+      if (exportTo) {
+        params.set("to", localDayEndExclusiveIso(exportTo));
+        params.set("toLabel", exportTo);
+      }
       const res = await fetch(`/api/revenue/export?${params}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));

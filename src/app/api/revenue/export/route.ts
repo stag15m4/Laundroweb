@@ -5,13 +5,22 @@ import { prisma } from "@/lib/prisma";
 
 const MACHINE_TYPE_LABELS: Record<string, string> = { WASHER: "Washers", DRYER: "Dryers", VENDING: "Vending" };
 
-// GET /api/revenue/export?from=<yyyy-mm-dd>&to=<yyyy-mm-dd>
+// GET /api/revenue/export?from=<ISO instant>&to=<ISO instant>&fromLabel=<yyyy-mm-dd>&toLabel=<yyyy-mm-dd>
 // Read-only JSON feed for the Revenue page's CSV/PDF export -- both are
 // built client-side from this same payload (see src/lib/revenue-export.ts),
-// so the date-range filtering only has to be correct in one place. `from`
-// and `to` are plain calendar days in whatever timezone the browser sent;
-// `to` is widened to the end of that day so "11/18" includes everything
-// that happened on the 18th, not just up to midnight.
+// so the date-range filtering only has to be correct in one place.
+//
+// `from`/`to` are exact instants, already resolved to the *browser's* local
+// day boundaries by the caller (same reasoning as CollectQuartersDialog's
+// own toIso() helper: a plain "yyyy-MM-dd" has no timezone of its own, and
+// resolving it here, on the server, would silently use the server's
+// timezone instead of whatever the person picking the range actually meant
+// by "the 18th"). `to` is the start of the day *after* the selected end
+// day (exclusive), not that day's end -- simpler than reconstructing
+// "23:59:59.999 in a timezone the server doesn't know" from an instant.
+// `fromLabel`/`toLabel` are the original plain calendar days, carried
+// through only for display in the exported file's header -- never parsed
+// as dates themselves.
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,6 +28,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const fromParam = searchParams.get("from");
   const toParam = searchParams.get("to");
+  const fromLabel = searchParams.get("fromLabel");
+  const toLabel = searchParams.get("toLabel");
 
   let from: Date | null = null;
   let to: Date | null = null;
@@ -33,7 +44,6 @@ export async function GET(req: NextRequest) {
     if (Number.isNaN(to.getTime())) {
       return NextResponse.json({ error: "Invalid 'to' date" }, { status: 400 });
     }
-    to.setHours(23, 59, 59, 999);
   }
 
   const dateFilter =
@@ -41,7 +51,7 @@ export async function GET(req: NextRequest) {
       ? {
           date: {
             ...(from ? { gte: from } : {}),
-            ...(to ? { lte: to } : {}),
+            ...(to ? { lt: to } : {}),
           },
         }
       : {};
@@ -59,7 +69,7 @@ export async function GET(req: NextRequest) {
   const changerTotal = changerLogs.reduce((sum, c) => sum + Number(c.amount), 0);
 
   return NextResponse.json({
-    range: { from: fromParam, to: toParam },
+    range: { from: fromLabel, to: toLabel },
     entries: entries.map((e) => ({
       date: e.date.toISOString(),
       amount: Number(e.amount),

@@ -15,9 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, Trash2, Pencil, DollarSign, ChevronDown, ChevronRight } from "lucide-react";
+import { buildRevenueCsv, buildRevenuePdf, type RevenueExportData } from "@/lib/revenue-export";
+import { Plus, Trash2, Pencil, DollarSign, ChevronDown, ChevronRight, Download } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { format, startOfMonth, eachDayOfInterval, endOfMonth } from "date-fns";
+import { format, startOfMonth, startOfYear, subMonths, eachDayOfInterval, endOfMonth } from "date-fns";
 
 type RevenueEntry = {
   id: string;
@@ -139,6 +140,44 @@ export default function RevenuePage() {
   // know any of that happened, since none of it runs inside that component.
   const [cashRefreshToken, setCashRefreshToken] = useState(0);
   const refreshCash = () => setCashRefreshToken((t) => t + 1);
+
+  // ── Export (CSV / PDF) ───────────────────────────────────────────────────
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFrom, setExportFrom] = useState(format(startOfMonth(new Date()), "yyyy-MM-dd"));
+  const [exportTo, setExportTo] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [exportBusy, setExportBusy] = useState<"csv" | "pdf" | null>(null);
+  const [exportError, setExportError] = useState("");
+
+  function setExportRange(from: Date | null, to: Date | null) {
+    setExportFrom(from ? format(from, "yyyy-MM-dd") : "");
+    setExportTo(to ? format(to, "yyyy-MM-dd") : "");
+  }
+
+  async function runExport(kind: "csv" | "pdf") {
+    setExportError("");
+    setExportBusy(kind);
+    try {
+      const params = new URLSearchParams();
+      if (exportFrom) params.set("from", exportFrom);
+      if (exportTo) params.set("to", exportTo);
+      const res = await fetch(`/api/revenue/export?${params}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setExportError(data.error ?? "Could not build the export.");
+        return;
+      }
+      const data: RevenueExportData = await res.json();
+      if (data.totals.entryCount === 0 && data.changerLogs.length === 0) {
+        setExportError("Nothing to export in that date range.");
+        return;
+      }
+      if (kind === "csv") buildRevenueCsv(data);
+      else await buildRevenuePdf(data);
+      setExportOpen(false);
+    } finally {
+      setExportBusy(null);
+    }
+  }
 
   function refreshEntries() {
     fetch("/api/revenue").then((r) => r.json()).then(setEntries);
@@ -300,6 +339,61 @@ export default function RevenuePage() {
               }}
             />
           )}
+          <Dialog open={exportOpen} onOpenChange={(o) => { setExportOpen(o); if (!o) setExportError(""); }}>
+            <Button variant="outline" onClick={() => setExportOpen(true)}>
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Export Revenue</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setExportRange(startOfMonth(new Date()), new Date())}>
+                    This month
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setExportRange(startOfMonth(subMonths(new Date(), 1)), endOfMonth(subMonths(new Date(), 1)))}
+                  >
+                    Last month
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setExportRange(startOfYear(new Date()), new Date())}>
+                    This year
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setExportRange(null, null)}>
+                    All time
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>From</Label>
+                    <Input type="date" value={exportFrom} onChange={(e) => setExportFrom(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>To</Label>
+                    <Input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Leave both blank for the complete all-time record. Coin changer cash is included
+                  as its own section — it&rsquo;s cash on hand, not revenue, so it&rsquo;s never mixed into the totals above it.
+                </p>
+                {exportError && <p className="text-sm text-red-600">{exportError}</p>}
+                <div className="grid grid-cols-2 gap-3">
+                  <Button type="button" variant="outline" disabled={exportBusy !== null} onClick={() => runExport("csv")}>
+                    {exportBusy === "csv" ? "Building…" : "Download CSV"}
+                  </Button>
+                  <Button type="button" disabled={exportBusy !== null} onClick={() => runExport("pdf")}>
+                    {exportBusy === "pdf" ? "Building…" : "Download PDF"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
           <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditingId(null); setEditingOriginalDate(null); setForm(emptyForm); } }}>
           <Button onClick={openAdd}>
             <Plus className="h-4 w-4 mr-2" />

@@ -330,7 +330,7 @@ export default function RevenuePage() {
     <div>
       <Header title="Revenue" description="Track coin vault collections and card payments">
         <div className="flex items-center gap-2">
-          {isOwner && <DailyReportDialog onSaved={refreshEntries} />}
+          {isOwner && <DailyReportDialog onSaved={refreshEntries} reportIds={entries.map((entry) => entry.id)} />}
           {isOwner && (
             <CollectQuartersDialog
               onSaved={() => {
